@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Runs the chaos test category to catch NFR-P2 regressions.
+# Wall-clock budget: ~5s. Fail the commit if any chaos test fails.
+# Full chaos-test integration lands in Story 1.6. Until then, the filter matches zero tests
+# and exits 0 trivially.
+set -e
+echo "Running chaos tests..."
+dotnet test --filter "Trait=category&Value=chaos" --nologo --verbosity quiet

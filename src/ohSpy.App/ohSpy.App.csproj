@@ -1,0 +1,79 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <!-- Allow MSBuild to build without a RID (Debug builds don't need one); only Publish/BuildInstaller require an explicit RID. -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <RootNamespace>ohSpy.App</RootNamespace>
+    <AssemblyName>ohSpy.App</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>                     <!-- Unpackaged -->
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>     <!-- bundle WAS -->
+    <SelfContained>true</SelfContained>                               <!-- bundle .NET -->
+    <PublishSingleFile>false</PublishSingleFile>                      <!-- installer wraps -->
+    <!-- Pin our Program.Main as the entry point; disable the XAML-compiler-generated Main from
+         App.xaml so we don't get CS0017 "multiple entry points". -->
+    <StartupObject>ohSpy.App.Program</StartupObject>
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\SplashScreen.scale-200.png" />
+    <Content Include="Assets\LockScreenLogo.scale-200.png" />
+    <Content Include="Assets\Square150x150Logo.scale-200.png" />
+    <Content Include="Assets\Square44x44Logo.scale-200.png" />
+    <Content Include="Assets\Square44x44Logo.targetsize-24_altform-unplated.png" />
+    <Content Include="Assets\Square44x44Logo.targetsize-48_altform-lightunplated.png" />
+    <Content Include="Assets\StoreLogo.png" />
+    <Content Include="Assets\AppIcon.ico" />
+    <Content Include="Assets\Wide310x150Logo.scale-200.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+
+  <!-- Package versions live in Directory.Packages.props (Central Package Management). -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ohSpy.Core\ohSpy.Core.csproj" />
+  </ItemGroup>
+
+  <!--
+    BuildInstaller target — depends on Publish, then invokes InnoSetup compiler.
+    Documented one-liner:
+      dotnet build src\ohSpy.App -t:BuildInstaller -c Release -p:RuntimeIdentifier=win-x64 -p:SelfContained=true -p:WindowsAppSDKSelfContained=true
+  -->
+  <Target Name="BuildInstaller"
+          DependsOnTargets="Publish"
+          Condition="'$(RuntimeIdentifier)' == 'win-x64' Or '$(BuildInstaller)' == 'true'">
+
+    <PropertyGroup>
+      <InnoSetupCompiler Condition="'$(InnoSetupCompiler)' == ''">$(ProgramFiles)\Inno Setup 6\ISCC.exe</InnoSetupCompiler>
+      <InstallerOutputDir>$(MSBuildThisFileDirectory)..\..\installer\out</InstallerOutputDir>
+      <InstallerVersion>$([System.DateTime]::UtcNow.ToString("yyyy.MM.dd.HHmm"))</InstallerVersion>
+      <!-- Deterministic publish path: matches the default Publish target output regardless of whether
+           a publish profile was used. Avoids the case where the pubxml's PublishDir and MSBuild's
+           default disagree, resulting in an empty installer. -->
+      <InstallerPublishDir>$(MSBuildThisFileDirectory)bin\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\publish\</InstallerPublishDir>
+    </PropertyGroup>
+
+    <Error Condition="!Exists('$(InnoSetupCompiler)')"
+           Text="Inno Setup compiler not found at '$(InnoSetupCompiler)'. Install Inno Setup 6 from https://jrsoftware.org/isdl.php or override InnoSetupCompiler." />
+
+    <Error Condition="!Exists('$(InstallerPublishDir)ohSpy.App.exe')"
+           Text="Publish output not found at '$(InstallerPublishDir)'. The Publish target should have produced this. Confirm RuntimeIdentifier=win-x64 is set on the build command line." />
+
+    <MakeDir Directories="$(InstallerOutputDir)" />
+
+    <Exec Command="&quot;$(InnoSetupCompiler)&quot; /Q /DPublishDir=&quot;$(InstallerPublishDir.TrimEnd('\'))&quot; /DOutputDir=&quot;$(InstallerOutputDir)&quot; /DVersion=$(InstallerVersion) &quot;$(MSBuildThisFileDirectory)..\..\installer\ohSpy.iss&quot;" />
+
+    <Message Text="Installer built: $(InstallerOutputDir)\ohSpy-setup-$(InstallerVersion)-x64.exe" Importance="high" />
+  </Target>
+</Project>

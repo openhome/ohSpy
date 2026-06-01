@@ -1,0 +1,6 @@
+<Project>
+  <Import Project="..\..\Directory.Build.props" />
+  <!-- Boundary: Microsoft.WindowsAppSDK and Microsoft.UI.* must not be referenced from Core.
+       Static enforcement: NetArchTest in tests/.../Architecture/CoreAppBoundaryTests.cs (Story 1.6).
+       Build-time enforcement: this csproj does NOT add Microsoft.WindowsAppSDK in its PackageReferences. -->
+</Project>

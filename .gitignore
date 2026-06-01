@@ -1,0 +1,22 @@
+# Build outputs
+bin/
+obj/
+
+# Publish + installer artefacts
+publish/
+installer/out/
+
+# IDE
+.vs/
+*.user
+
+# Test results
+TestResults/
+[Cc]overage*/
+
+# BMad scratch
+_bmad-output/*.tmp
+
+# OS
+Thumbs.db
+.DS_Store
