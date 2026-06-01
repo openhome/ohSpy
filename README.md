@@ -58,3 +58,4 @@ Key decisions worth knowing up-front:
 - **Central Package Management** (Amendment A3). All NuGet versions live in `Directory.Packages.props`; csproj files carry bare `<PackageReference>` entries with no `Version` attribute.
 - **Async discipline enforced at build time** (Pattern 6). `Microsoft.VisualStudio.Threading.Analyzers` is wired into `Directory.Build.props` and bans `.Result` / `.Wait()` solution-wide.
 - **Core ↔ App boundary** (Pattern 2). `ohSpy.Core` targets `net10.0` (no `-windows` suffix) and must not reference `Microsoft.WindowsAppSDK`. NetArchTest enforces this from Story 1.6.
+
