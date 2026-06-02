@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ohSpy.App.Windowing;
 using ohSpy.Core.Diagnostics;
+using ohSpy.Core.Discovery;
 using ohSpy.Core.Http;
 using ohSpy.Core.Scpd;
 using ohSpy.Core.Threading;
@@ -60,6 +61,11 @@ internal static class ServiceRegistration
         // Story 1.4 — XML parsers (Decision 5). Stateless across documents; singleton fine.
         services.AddSingleton<IScpdParser, XmlReaderScpdParser>();
         services.AddSingleton<IDeviceDescriptionParser, DeviceDescriptionParser>();
+
+        // Story 2.1 — SSDP transport (Decision 2). Singleton: the type is resolvable, but
+        // its lifecycle (StartAsync / DisposeAsync per adapter) is owned by AdapterScope
+        // (Story 2.2). No consumer wires it until DiscoveryService (Story 2.4).
+        services.AddSingleton<ISsdpTransport, SsdpTransport>();
 
         return services;
     }
