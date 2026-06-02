@@ -4,7 +4,7 @@ baseline_commit: 609e08ced3fefda3077963fe60ab5c58c209be72
 
 # Story 1.4: XML Parsers — SCPD Streaming + Device Description with XXE Defence
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -1274,4 +1274,4 @@ claude-opus-4-7[1m] via `bmad-dev-story` skill, 2026-06-02.
 ## Change Log
 
 - **2026-06-02** — Story 1.4 implementation completed by claude-opus-4-7[1m] via `bmad-dev-story`. All 11 tasks (58 subtasks) complete. `dotnet build` clean (0 warnings, 0 errors). `dotnet test` green at 84/84 (66 baseline + 18 new). Smoke test (WinUI App launch, DI resolve of both new parser singletons) confirmed alive at 10 s with empty stderr. Story status flipped ready-for-dev → in-progress → review. Working tree left dirty for user to commit + launch `bmad-code-review`.
-- **(pending)** Code review.
+- **2026-06-02** — Story 1.4 APPROVED by Sonnet (claude-sonnet-4-6) independent code review (bmad-code-review). All 9 ACs verified PASS. No critical or major findings. Two minor notes (mutable Dictionary exposed as IReadOnlyDictionary; no pre-cancelled ReadStateTableAsync cancellation test). Five dev-agent deviations from spec skeleton all accepted as correct fixes. Status: done.
