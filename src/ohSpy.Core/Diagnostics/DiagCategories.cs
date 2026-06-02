@@ -14,4 +14,14 @@ public static class DiagCategories
 
     /// <summary>Mandatory context: Url.</summary>
     public const string HttpOversizeBody = "Http.OversizeBody";
+
+    // Story 1.4 — pre-declared for downstream consumers. The parsers themselves do NOT
+    // emit diagnostics (no URL context); Stories 2.3 / 2.6 catch UpnpProtocolException +
+    // re-emit with the real URL.
+
+    /// <summary>Mandatory context: Url; ErrorText for the wrapped XmlException message.</summary>
+    public const string ScpdParse = "Scpd.Parse";
+
+    /// <summary>Mandatory context: DeviceUuid, Url; ErrorText for the wrapped XmlException message.</summary>
+    public const string DescriptionParse = "Description.Parse";
 }

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <specVersion><major>1</major><minor>0</minor></specVersion>
+  <device>
+    <deviceType>urn:schemas-upnp-org:device:InternetGatewayDevice:1</deviceType>
+    <friendlyName>Home Router</friendlyName>
+    <manufacturer>Netgear</manufacturer>
+    <modelName>R7000</modelName>
+    <UDN>uuid:igd-root-0000-0000-000000000001</UDN>
+    <serviceList>
+      <service>
+        <serviceType>urn:schemas-upnp-org:service:Layer3Forwarding:1</serviceType>
+        <serviceId>urn:upnp-org:serviceId:Layer3Forwarding</serviceId>
+        <SCPDURL>/L3F/scpd.xml</SCPDURL>
+        <controlURL>/L3F/control</controlURL>
+        <eventSubURL>/L3F/event</eventSubURL>
+      </service>
+    </serviceList>
+    <deviceList>
+      <device>
+        <deviceType>urn:schemas-upnp-org:device:WANDevice:1</deviceType>
+        <friendlyName>WAN Device</friendlyName>
+        <manufacturer>Netgear</manufacturer>
+        <modelName>R7000-WAN</modelName>
+        <UDN>uuid:igd-wan-0000-0000-000000000002</UDN>
+        <serviceList>
+          <service>
+            <serviceType>urn:schemas-upnp-org:service:WANCommonInterfaceConfig:1</serviceType>
+            <serviceId>urn:upnp-org:serviceId:WANCommonIFC1</serviceId>
+            <SCPDURL>/WANCIC/scpd.xml</SCPDURL>
+            <controlURL>/WANCIC/control</controlURL>
+            <eventSubURL>/WANCIC/event</eventSubURL>
+          </service>
+        </serviceList>
+        <deviceList>
+          <device>
+            <deviceType>urn:schemas-upnp-org:device:WANConnectionDevice:1</deviceType>
+            <friendlyName>WAN Connection Device</friendlyName>
+            <UDN>uuid:igd-wan-conn-0000-000000000003</UDN>
+            <serviceList>
+              <service>
+                <serviceType>urn:schemas-upnp-org:service:WANIPConnection:1</serviceType>
+                <serviceId>urn:upnp-org:serviceId:WANIPConn1</serviceId>
+                <SCPDURL>/WANIPC/scpd.xml</SCPDURL>
+                <controlURL>/WANIPC/control</controlURL>
+                <eventSubURL>/WANIPC/event</eventSubURL>
+              </service>
+            </serviceList>
+          </device>
+        </deviceList>
+      </device>
+    </deviceList>
+  </device>
+</root>

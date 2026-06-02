@@ -26,4 +26,11 @@
     <ProjectReference Include="..\..\src\ohSpy.Core\ohSpy.Core.csproj" />
   </ItemGroup>
 
+  <!-- Story 1.4: SCPD + device-description fixtures copied to output for File.OpenRead. -->
+  <ItemGroup>
+    <None Update="Fixtures\**\*.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scpd xmlns="urn:schemas-upnp-org:service-1-0">
+  <specVersion><major>1</major><minor>0</minor></specVersion>
+  <actionList/>
+  <serviceStateTable>
+    <stateVariable>
+      <name>Mute</name><dataType>boolean</dataType><defaultValue>0</defaultValue>
+    </stateVariable>
+    <stateVariable>
+      <name>Volume</name><dataType>ui4</dataType><defaultValue>50</defaultValue>
+      <allowedValueRange><minimum>0</minimum><maximum>100</maximum><step>1</step></allowedValueRange>
+    </stateVariable>
+    <stateVariable>
+      <name>Balance</name><dataType>i4</dataType>
+      <allowedValueRange><minimum>-15</minimum><maximum>15</maximum></allowedValueRange>
+    </stateVariable>
+    <stateVariable>
+      <name>Mode</name><dataType>string</dataType><defaultValue>Stereo</defaultValue>
+      <allowedValueList>
+        <allowedValue>Stereo</allowedValue>
+        <allowedValue>Mono</allowedValue>
+        <allowedValue>Surround</allowedValue>
+      </allowedValueList>
+    </stateVariable>
+  </serviceStateTable>
+</scpd>

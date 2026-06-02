@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <device>
+    <deviceType>urn:test:device:Minimal:1</deviceType>
+    <friendlyName>Minimal</friendlyName>
+    <manufacturer>Test</manufacturer>
+    <modelName>Min</modelName>
+    <UDN>uuid:minimal-0000-0000-0000-000000000001</UDN>
+    <serviceList/>
+  </device>
+</root>

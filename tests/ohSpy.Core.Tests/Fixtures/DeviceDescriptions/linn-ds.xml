@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <specVersion><major>1</major><minor>0</minor></specVersion>
+  <device>
+    <deviceType>urn:linn-co-uk:device:Source:1</deviceType>
+    <friendlyName>Living Room DS</friendlyName>
+    <manufacturer>Linn Products</manufacturer>
+    <manufacturerURL>http://www.linn.co.uk</manufacturerURL>
+    <modelDescription>Linn Klimax DS</modelDescription>
+    <modelName>Klimax DS</modelName>
+    <modelNumber>3.0</modelNumber>
+    <modelURL>http://www.linn.co.uk/klimax-ds</modelURL>
+    <serialNumber>123456</serialNumber>
+    <UDN>uuid:4c494e4e-0000-0000-0000-000000000001</UDN>
+    <UPC>0123456789012</UPC>
+    <presentationURL>http://192.168.1.100/</presentationURL>
+    <serviceList>
+      <service>
+        <serviceType>urn:linn-co-uk:service:Volkano:1</serviceType>
+        <serviceId>urn:linn-co-uk:serviceId:Volkano</serviceId>
+        <SCPDURL>/Volkano/Scpd.xml</SCPDURL>
+        <controlURL>/Volkano/control</controlURL>
+        <eventSubURL>/Volkano/event</eventSubURL>
+      </service>
+    </serviceList>
+  </device>
+</root>

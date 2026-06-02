@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using ohSpy.App.Windowing;
 using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Http;
+using ohSpy.Core.Scpd;
 using ohSpy.Core.Threading;
 
 /// <summary>
@@ -30,6 +31,10 @@ internal static class ServiceRegistration
         // Story 1.3 — minimal diagnostic surface; Story 1.5 will REPLACE this with the
         // production DiagnosticEmitter + ring/file sinks.
         services.AddSingleton<IDiagnosticEmitter, NoOpDiagnosticEmitter>();
+
+        // Story 1.4 — XML parsers (Decision 5). Stateless across documents; singleton fine.
+        services.AddSingleton<IScpdParser, XmlReaderScpdParser>();
+        services.AddSingleton<IDeviceDescriptionParser, DeviceDescriptionParser>();
 
         return services;
     }
