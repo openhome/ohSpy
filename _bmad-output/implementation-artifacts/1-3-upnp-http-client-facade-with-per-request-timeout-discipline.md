@@ -4,7 +4,7 @@ baseline_commit: b9ea15d1c10c41094d06f91fb36c299bd27483e3
 
 # Story 1.3: UPnP HTTP Client Facade with Per-Request Timeout Discipline
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -1219,6 +1219,16 @@ Surfacing the two amendment candidates that Dev Notes told me to expect, plus a 
 **NOT modified:**
 - `Directory.Packages.props` — `Microsoft.Extensions.Options 10.0.0` and `Microsoft.Extensions.DependencyInjection 10.0.0` are already pinned (lines 8 + 10, original A3 baseline). No new `PackageVersion` entries.
 
+### Review Findings
+
+> Code review by Sonnet (independent, fresh context) — 2026-06-02. Diff: 8a6fb44. Verdict: APPROVED-WITH-MINOR-FIXES.
+
+- [x] [Review][Patch] Missing `_diag.Warning(DiagCategories.HttpTransport)` before `UpnpTransportException` throw in `SendSubscribeOrRenewAsync` non-2xx HTTP path [UpnpHttpClient.cs:299-303] — `HttpRequestException` catch does emit (line 325-328) but the explicit `!resp.IsSuccessStatusCode` branch does not. Inconsistent with `InvokeActionAsync` equivalent path. Affects observability of 4xx/5xx SUBSCRIBE/RENEW failures. Action item for Story 4.2 (subscription lifecycle).
+- [x] [Review][Patch] No test coverage for `UnsubscribeAsync` timeout or caller-cancellation paths [UpnpHttpClientTests.cs] — both `OperationCanceledException` catch branches exist in `UnsubscribeAsync` but no test exercises them. Not a strict AC violation (AC-11 says "AC-3.1..3.6 exercised by tests" and the tests file section header groups Unsubscribe with Subscribe), but the happy-path-only coverage leaves the cancel/timeout paths untested. Action item to add two tests; can land in Story 4.2 alongside subscription lifecycle.
+- [x] [Review][Defer] `TryParseUPnPError` matches `LocalName == "errorCode"` without namespace check — theoretical false-positive on atypical XML. Benign: the `errorCode != 0` gate limits false positives to an XML body that has a non-UPnP `<errorCode>N</errorCode>` with N>0. Story 3.1 replaces this parser; deferring to that story.
+- [x] [Review][Defer] `Subscribe` test does not assert CALLBACK header angle-bracket format `<{callbackUrl}>` — only presence checked. Verification of exact wire format deferred to Story 4.2 integration tests.
+
 ## Change Log
 
 - **2026-06-02 — Story 1.3 implementation (claude-opus-4-7[1m] via bmad-dev-story).** Shipped `IUpnpHttpClient` facade (`UpnpHttpClient` + 4-derivative `UpnpException` hierarchy + `HttpTimeoutOptions` + thin Soap/Subscribe records) and the minimum `IDiagnosticEmitter` surface (`NoOpDiagnosticEmitter` placeholder ahead of Story 1.5). Closes the prior tool's "slow devices hang the app" defect via per-op linked CTS + `HttpCompletionOption.ResponseHeadersRead` + token-threaded body reads + per-method size caps (AC-3.5). All 11 ACs covered by 41 new tests. Build 0/0; test 66/0; chaos filter 0; App smoke OK. Surfaced A9/A10 architecture-amendment candidates (verbatim from Dev Notes) plus an optional A11 (analyzer-exemption documentation). Status: ready-for-dev → in-progress → review.
+- **2026-06-02 — Story 1.3 code review (Sonnet via bmad-code-review).** APPROVED-WITH-MINOR-FIXES. All 11 ACs pass. Core timeout discipline (linked CTS, ResponseHeadersRead, token-threaded body reads, size caps) verified correct. Two action items deferred to Story 4.2: (1) missing diagnostic emission on SUBSCRIBE non-2xx path; (2) Unsubscribe timeout/cancel test coverage. Two deferred findings: namespace-agnostic fault parser (Story 3.1 replaces); CALLBACK format assertion gap (Story 4.2 integration tests). Status: review → done.
