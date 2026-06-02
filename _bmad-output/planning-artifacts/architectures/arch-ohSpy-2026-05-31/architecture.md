@@ -2771,6 +2771,54 @@ The mis-placement caused real friction during Story 1.5 implementation:
 
 ---
 
+### Amendment A16 — Test project: `FrameworkReference Microsoft.AspNetCore.App` + NU1510 prune
+
+**Source:** Story 1.6 (`1-6-fakeupnpdevice-minimal-modes-first-chaos-test-netarchtest-rules`) implementation, confirmed by the Sonnet code-review of commit `50345c9` (2026-06-02).
+
+**Issue.** Story 1.6's `FakeUpnpDevice` Kestrel fixture needs ASP.NET Core types (`WebApplication`, `Kestrel`, `HttpContext`). The architecture's D3 line (~370) left the Kestrel-package vs framework-reference choice open. The dev agent chose `<FrameworkReference Include="Microsoft.AspNetCore.App" />` — cleaner than 5+ transitive PackageReferences. **But adding the FrameworkReference to `ohSpy.Core.Tests.csproj` triggered NU1510 against the three existing `Microsoft.Extensions.{DependencyInjection,Options,Logging}` PackageReferences** — the shared framework provides those transitively; explicit refs are redundant under NU1510.
+
+**Correction applied.** The dev agent removed the three redundant `Microsoft.Extensions.*` PackageReferences from `ohSpy.Core.Tests.csproj`. The test project still has access to those types (transitively via the framework); build is clean (0 warnings under `TreatWarningsAsErrors=true`).
+
+**Guidance for future test projects.** Any test project that needs ASP.NET Core types (Kestrel fixture, integration test for an HTTP endpoint, etc.) should:
+
+1. Add `<FrameworkReference Include="Microsoft.AspNetCore.App" />` to the csproj.
+2. Then remove any existing `Microsoft.Extensions.{DependencyInjection,Logging,Options,Hosting,Configuration}` PackageReferences from that csproj — the framework provides them transitively, NU1510 flags duplicates as warnings.
+3. The framework reference works under `Microsoft.NET.Sdk` (no need to switch to `Microsoft.NET.Sdk.Web`); confirmed in .NET 8+.
+
+**Implementation evidence:** `tests/ohSpy.Core.Tests/ohSpy.Core.Tests.csproj` in commit `50345c9` — three PackageReferences removed alongside the FrameworkReference addition; build green.
+
+---
+
+### Amendment A18 — Chaos-hook filter syntax bug (Decision 13 refinement) — **CRITICAL**
+
+**Source:** Story 1.6 implementation; **confirmed by live test run during Sonnet code-review (2026-06-02).**
+
+**Issue.** The pre-commit chaos hook's `dotnet test --filter` argument was quoted verbatim in D13's bash script + prose description as:
+
+```
+dotnet test --filter "Trait=category&Value=chaos"
+```
+
+This is **MSTest TestProperty syntax**. Under xUnit's VSTest adapter, this filter form **silently matches zero tests** — `dotnet test` exits 0 with no test output. The correct xUnit syntax for `[Trait("category", "chaos")]` is:
+
+```
+dotnet test --filter "category=chaos"
+```
+
+Verified by the code-review's live test run:
+- Old form: `dotnet test --filter "Trait=category&Value=chaos"` → **0 tests matched** (silent exit 0)
+- New form: `dotnet test --filter "category=chaos"` → `Passed: 1, Duration: 470 ms`
+
+**Impact: Stories 1.1-1.5's chaos hook was a SILENT NO-OP for ~5 days of work.** Every "Running chaos tests... 0 matched, exit 0 trivially" we read in dev-story reports was reported as "trivially-passing because no chaos tests exist yet" — but the root cause was actually the broken filter string. Once Story 1.6 added a chaos test, the hook would STILL have matched zero unless the filter was fixed.
+
+**Correction applied.** Story 1.6 patched `.githooks/pre-commit` to use `category=chaos`. This amendment patches the architecture document's D13 bash script + prose description to match — see the patched verbatim block above.
+
+**Future-proofing.** xUnit's VSTest filter syntax is documented at <https://github.com/Microsoft/vstest-docs/blob/main/docs/filter.md>: trait filters use `<TraitName>=<Value>` form (case-sensitive trait name). MSTest's `Trait=X&Value=Y` form does not apply. Any future hook additions to D13 must use xUnit syntax.
+
+**Implementation evidence:** `.githooks/pre-commit` in commit `50345c9` (Story 1.6) carries the fix. Architecture D13 patched in the next docs commit.
+
+---
+
 ### Decision 13 — Pre-Commit Chaos Hook (the regression net replacing CI)
 
 **Chosen:** Git pre-commit hook at `.githooks/pre-commit` running the chaos test suite before every commit. Without CI (Decision 12), this is the regression net that catches `.Result` regressions and broken NFR-P2 invariants before they're merged.
@@ -2787,16 +2835,20 @@ git config core.hooksPath .githooks
 #!/usr/bin/env bash
 # Runs the chaos test category to catch NFR-P2 regressions.
 # Wall-clock budget: ~5s. Fail the commit if any chaos test fails.
+# Patched 2026-06-02 by Amendment A18: filter syntax must be xUnit-form
+# `category=chaos`, NOT MSTest-form `Trait=category&Value=chaos` (which
+# silently matches zero tests under xUnit's VSTest adapter — the actual
+# root cause of Stories 1.1-1.5's "trivially-passing" hook state).
 set -e
 echo "Running chaos tests..."
-dotnet test --filter "Trait=category&Value=chaos" --nologo --verbosity quiet
+dotnet test --filter "category=chaos" --nologo --verbosity quiet
 ```
 
 **On Windows without bash:** the hook works via the bash shipped with Git for Windows. If Simon's machine doesn't have Git Bash for some reason, a PowerShell equivalent (`.githooks/pre-commit.ps1` shimmed via `.githooks/pre-commit`) is the fallback.
 
 **Behaviour:**
 
-- Pre-commit runs `dotnet test --filter "Trait=category&Value=chaos"`. Wall-clock ~5 s when the FakeUpnpDevice fixture is built (Story 2a) and the chaos test exists.
+- Pre-commit runs `dotnet test --filter "category=chaos"` (patched A18 from the broken MSTest-form `Trait=category&Value=chaos`). Wall-clock ~5 s with the FakeUpnpDevice fixture and chaos test (both Story 1.6).
 - Hook fails (non-zero exit) → commit aborted with the test output visible.
 - Hook can be skipped via `git commit --no-verify` for emergency commits (e.g. WIP). Architecturally allowed but linted via PR-review discipline.
 
