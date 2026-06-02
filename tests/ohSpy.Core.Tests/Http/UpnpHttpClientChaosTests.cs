@@ -10,7 +10,7 @@ using ohSpy.Core.Tests.Fakes;
 /// <summary>
 /// Chaos tests against the FakeUpnpDevice Kestrel fixture. Every test here carries
 /// <c>[Trait("category", "chaos")]</c> so the pre-commit hook's
-/// <c>dotnet test --filter "Trait=category&amp;Value=chaos"</c> picks them up.
+/// <c>dotnet test --filter "category=chaos"</c> picks them up.
 /// </summary>
 public sealed class UpnpHttpClientChaosTests
 {

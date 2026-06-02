@@ -4,7 +4,7 @@ baseline_commit: d468c6f83ec78e1341ef3059e836881c54d40da1
 
 # Story 1.6: FakeUpnpDevice (Minimal Modes), First Chaos Test, NetArchTest Rules
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -872,6 +872,20 @@ claude-opus-4-7[1m] (Opus 4.7, 1M context) — `bmad-dev-story` workflow, 2026-0
 
 **Production code:** **zero changes** in `src/**` (`git diff --stat src/` is empty after the Task 9 smoke reverts). Per the spec, Story 1.6 is test infrastructure only.
 
+## Code Review
+
+**Reviewer:** claude-sonnet-4-6 (fresh context, independent) via bmad-code-review — 2026-06-02.
+**Verdict:** APPROVED-WITH-MINOR-FIXES
+
+### Review Findings
+
+- [x] [Review][Patch] Stale XML doc comment in UpnpHttpClientChaosTests.cs still referenced broken filter syntax [tests/ohSpy.Core.Tests/Http/UpnpHttpClientChaosTests.cs:13] — **Fixed** (updated `Trait=category&Value=chaos` → `category=chaos`).
+- [x] [Review][Patch] Hook comment mislabelled A18 as A16 [.githooks/pre-commit:7] — **Fixed** (corrected label to A18).
+- [x] [Review][Defer] FluentAssertions 8.0.0 commercial-license warning at runtime [Directory.Packages.props] — deferred, pre-existing; surface at Epic 1 retrospective.
+
+All 9 ACs verified passing. A18 confirmed by running both filter forms: `Trait=category&Value=chaos` → 0 tests; `category=chaos` → 1 test, 470 ms. Hook was silently broken since Story 1.1; fixed in this commit. Architecture amendments A16 and A18 recommended (see Change Log).
+
 ## Change Log
 
 - **2026-06-02 (claude-opus-4-7[1m] via bmad-dev-story):** Implemented Story 1.6. Added `FakeUpnpDevice` Kestrel fixture (3 minimal modes), first chaos test against `HangAfter200Ok` (AC-3.5 regression), three NetArchTest architecture-test classes (Patterns 2 / 6 / 11), and corrected the pre-commit hook's filter syntax (A18 amendment candidate). Test count 116 → 126 (1 chaos + 4 boundary + 3 real categories + 2 placeholders). Status `in-progress` → `review`. Surfaced A16 (redundant PackageReferences after FrameworkReference) and A18 (chaos-hook filter syntax) amendment candidates.
+- **2026-06-02 (claude-sonnet-4-6 via bmad-code-review):** Story 1.6 APPROVED-WITH-MINOR-FIXES. Applied 2 minor doc patches (stale filter string in class XML doc; hook comment A16/A18 mislabel). Confirmed A18 by live test run. Deferred FluentAssertions licensing to Epic 1 retrospective. Status `review` → `done`.
