@@ -141,7 +141,14 @@ visual_basic_preferred_modifier_order = Partial,Default,Private,Protected,Public
 # - CA1707 (no underscores in names): exempt — `Method_Scenario_Expected` is the standard xUnit naming convention.
 # - CA1806 (constructor result discarded): exempt — `Action act = () => new T(badArg)` is the idiomatic FluentAssertions
 #   pattern for asserting that a constructor throws; the instance is intentionally not retained.
+# - VSTHRD003 (await Task started elsewhere): exempt — tests routinely capture a pending Task into a local
+#   then cancel a CTS to drive a code path; the "await later" pattern is intentional and the deadlock risk
+#   the analyzer guards against doesn't apply outside SynchronizationContext-bound app code.
+# - CA2263 (prefer generic overload): exempt — `[Theory] [InlineData(typeof(T))] void Foo(Type t)` requires
+#   the runtime-Type overload because the type comes from attribute data, not a generic parameter.
 [tests/**/*.cs]
 dotnet_diagnostic.VSTHRD100.severity = none
+dotnet_diagnostic.VSTHRD003.severity = none
 dotnet_diagnostic.CA1707.severity = none
 dotnet_diagnostic.CA1806.severity = none
+dotnet_diagnostic.CA2263.severity = none

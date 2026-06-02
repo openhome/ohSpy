@@ -4,4 +4,15 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Story 1.3: tests need access to UpnpHttpClient's internal test-only ctor + HttpClientTimeoutForTests accessor. -->
+    <InternalsVisibleTo Include="ohSpy.Core.Tests" />
+    <!-- Story 1.3: the App composition root registers internal-sealed types (UpnpHttpClient, NoOpDiagnosticEmitter). -->
+    <InternalsVisibleTo Include="ohSpy.App" />
+  </ItemGroup>
+
 </Project>
