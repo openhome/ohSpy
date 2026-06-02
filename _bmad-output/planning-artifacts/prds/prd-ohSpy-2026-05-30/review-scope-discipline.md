@@ -1,0 +1,60 @@
+# Scope Discipline Review — ohSpy PRD
+
+## Overall verdict
+
+The PRD sits largely inside the brief's envelope: FR-001..FR-055 are a faithful lift from `UpnpSpy/specs/001-upnp-spy-discovery/spec.md`, the three quality bars (Reliability / Performance / UI polish) are carried into §5 with budgets reproduced in §6, and §7 Non-Goals mirrors the brief's Out list. The only material drift outward is **FR-103** (`<allowedValueRange>` numeric input validation), which the decision log records as a same-day Simon-authored addition that goes beyond both UpnpSpy parity and the brief's "named fixes" pair — it should be acknowledged as a deliberate parity-plus or pulled. A second, minor drift is some over-commitment in the Diagnostics viewer's identity/endpoint columns (FR-041) relative to anything the brief or UpnpSpy spec required. Otherwise the PRD reads tightly, and the glossary + compressed-UJ choices serve the L&L audience well.
+
+## 1. Scope creep
+
+The brief's scope thesis is bright-line: "parity with UpnpSpy" plus the two named fixes (chatty SSDP log without stutter / hung-device timeouts) plus the three quality bars. Anything outside that envelope is creep, even when individually defensible.
+
+### Findings
+
+- **high — FR-103 `<allowedValueRange>` numeric input validation goes beyond brief scope** (PRD §4.9 FR-103 / brief §"In", §"Out"). FR-103 introduces client-side numeric range/step enforcement on action inputs. This is not present in UpnpSpy's FR set (which stops at FR-055 with free-form text inputs) and is not one of the brief's two named performance fixes. The decision log (2026-05-31) records it as Simon's call — adding range validation because "range constraints are common on volume, gain, balance, source-index". That justification is reasonable on its own merits but is exactly the "while we're in there" pattern the brief explicitly forbids ("No features beyond UpnpSpy parity + the named fixes. No 'while we're in there' additions."). FR-102 has the same provenance and the same concern, though Simon's decision-log entries make the deliberateness of both calls explicit. *Fix:* either (a) acknowledge FR-102/FR-103 in §7 Non-Goals' opening sentence as "two deliberate parity-plus additions, decided 2026-05-31, recorded in decision log", so the L&L audience sees the scope envelope was widened consciously rather than by drift; or (b) cut FR-103 back to a v2 deferral and keep FR-102 only (smaller, more defensible delta — enum dropdowns are higher value per scope cost than numeric step validation).
+- **medium — FR-041 Diagnostics viewer over-commits on Identity/Endpoint columns** (PRD §4.12 FR-041 / brief §"Diagnostics" + UpnpSpy FR-041). UpnpSpy's FR-041 commits only to "in-memory diagnostic buffer ... scrollable viewer window showing the buffered entries". The ohSpy PRD layers on a specific schema: Identity column with friendlyName-or-`uuid:<uuid>` resolution from the live registry, Endpoint column with `host:port` extraction from URL or `remote.endpoint`, plus "best-effort snapshot-at-arrival" resolution semantics. This is a feature addition (richer diagnostic UX) over UpnpSpy parity, and is not in the brief's named-fixes list. *Fix:* either trim FR-041 back to UpnpSpy-equivalent ("buffered entries shown with timestamp, severity, message, full context") and let the architecture phase decide column ergonomics, or flag the enrichment in the decision log alongside FR-102/FR-103.
+- **low — NFR-P3 commits to enforcement-by-test (static analysis or integration tests)** (PRD §5.2 NFR-P3 / brief §"Performance"). Brief says "no UI-thread blocking, ever" as an outcome. NFR-P3 escalates this to "verified by static analysis or by integration tests where feasible" — a process commitment the brief does not require. Defensible (raises the quality bar) but is a delivery commitment the architecture phase can scope; calling it out in the PRD pre-commits work. *Fix:* soften to "enforceable in architecture and code review; test-level enforcement TBD in architecture phase".
+- **low — Performance Budgets table adds budgets not in the brief or UpnpSpy `plan.md` text** (PRD §6 / brief §"Performance"). Specifically the "Scale ceiling: 8-hour session, 20 devices, 5 open subscription popups, saturated SSDP log < 200 MB resident" line. The brief specifies a 30-min session reliability bar and 1-hr operation bound; the 8-hour / 200 MB line is a budget the PRD invented. Reasonable, but creates a measurable acceptance commitment the brief did not authorise. *Fix:* either anchor SC-013 to the brief's 30-min/1-hr bounds and drop the 8-hour ceiling, or note "SC-013/Scale ceiling extrapolated from brief — confirm before performance acceptance" in Assumptions Index.
+
+## 2. Scope under-statement
+
+Looking for brief requirements that the PRD dropped, weakened, or buried.
+
+### Findings
+
+- **medium — Brief's "30-min debugging session, no crashes" bar is in NFR-R1 but not surfaced in §6 budgets** (PRD §5.1 NFR-R1, §6 / brief §"Quality constraints — Reliability"). The brief's reliability bar has a specific window (30-min session) and specific failure modes (slow responders, mid-subscription disappearance, partial NOTIFY, larger-than-typical SCPDs). NFR-R1 carries the words but §6 budgets don't include a reliability scenario you can run to acceptance. SM-4 references it but doesn't operationalise it. *Fix:* add an `SC-R-30min` row to §6 — "30-min continuous session on a chatty network with at least N slow/misbehaving devices: no crash, no UI hang > [budget], no unrecovered popups". Gives QA something to execute against.
+- **low — Brief's "feature parity with UpnpSpy" claim — verify no upstream FR silently dropped** (PRD §4 / brief §"Scope: In"). Spot-check confirms FR-001..FR-055 are present in the ohSpy PRD with original IDs, matching the UpnpSpy spec. UpnpSpy spec has gaps in the FR-XXX sequence (PRD §4 acknowledges this), so no silent drops detected. This finding is preventative only: if the architecture phase or stories drop any FR-NNN, parity is broken — worth a CI-style check before L&L.
+- **low — Brief's "artifacts as deliverables" framing surfaces in §0 and §2.1, but the PRD does not explicitly self-audit for L&L readability** (PRD §0 / brief §"Process Artifacts as First-Class Deliverables"). The PRD acknowledges the L&L role and includes a glossary; it does not state that the PRD itself will be reviewed for L&L readability before the talk. *Fix:* add a single line to §0 — "This PRD is reviewed for L&L readability before the talk; any section that would not survive a live walkthrough is rewritten or cut."
+
+## 3. Non-Goals discipline
+
+Mirror check between brief §"Out" and PRD §7.
+
+### Findings
+
+- **PASS — All seven brief Out items are mirrored.** Cross-platform, public/OSS distribution, persona/visual design/branding, technical moat-building, settings persistence, a11y, parity-plus features ("No features beyond UpnpSpy parity + named fixes") — all present in §7.
+- **low — PRD §7 adds two items the brief did not enumerate** (PRD §7 / brief §"Out"). "No IPv6" and "No multi-NIC merging" are additional explicit non-goals. These are technical-scope clarifications consistent with the brief (it says "Native Windows desktop, single-platform" without mentioning IP version) — not creep, but worth flagging that the PRD has narrowed the implicit envelope. Defensible; arguably good discipline. *Fix:* none required; possibly worth a Decision Log entry noting these were added at PRD time.
+- **low — PRD §7 reframes one brief Out** (PRD §7 / brief §"Out"). Brief: "Persona work, visual design system, branding". PRD: "No persona work, visual design system, or branding. Developer tool; BMM lane, not WDS lane." The "BMM lane, not WDS lane" framing is a process classification not in the brief. Adds context for BMad-literate readers but is internal jargon the L&L audience may not parse. *Fix:* if the L&L audience won't know what BMM/WDS lanes are, gloss them or drop the parenthetical.
+
+## 4. Quality-bar fidelity
+
+The brief's three quality bars are stated as non-negotiable, with specific budgets. Check whether §5 NFRs and §6 budgets cover them faithfully.
+
+### Findings
+
+- **PASS — Reliability bar.** Brief: no crashes, slow devices don't hang UI, clean recovery on device disappearance. NFR-R1..R5 cover each subclause. *(Under-statement finding above re: §6 missing a runnable reliability scenario applies.)*
+- **PASS — Performance bar.** Brief: 5s startup discovery, ~100ms warm SCPD expansion, ~2s cold SCPD expansion (100+ actions), chatty-SSDP smoothness, no UI-thread blocking. All four reproduced in §6 (SC-001, Warm SCPD Expand, Cold large-SCPD Expand, SC-009 + burst-rate baseline, NFR-P3). The PRD's `~7 s total` startup framing (5s MX + 2s eager fetch) is a slight expansion of the brief's `~5 s` — defensible because the brief's 5s likely means "first devices visible" which matches the MX boundary, while PRD's 7s means "every responsive device fully loaded". Worth a glossary or §6 note to avoid an L&L "wait, the brief said 5s?" moment.
+- **PASS — UI polish bar.** Brief: modern WinUI conventions, virtualized scrolling on high-cardinality lists, considered visual hierarchy, no full-screen repaints on incremental updates. NFR-UI1..UI4 + NFR-P1 + NFR-P5 cover all four.
+- **low — Performance Budgets §6 includes some SC-NNN budgets not anchored to brief or UpnpSpy `plan.md` text** (PRD §6). Inheritance claim ("Inherited verbatim from UpnpSpy `plan.md` SC-001 through SC-018") is largely true; SC-002, SC-003 etc. are reasonable derivations but the brief itself only commits to the four budgets noted above. Not creep per se — more comprehensive than the brief — but the "verbatim from UpnpSpy plan.md" claim should be verified or hedged. *Fix:* either verify SC-001..SC-018 are literally in `UpnpSpy/specs/001-upnp-spy-discovery/plan.md`, or change the header to "derived from and consistent with UpnpSpy plan.md".
+
+## 5. Audience fit
+
+Brief targets Linn software engineers (UPnP-literate, technical, impatient) plus a wider Linn engineering audience for the L&L (BMad-curious, possibly not UPnP-literate).
+
+### Findings
+
+- **PASS — UJ compression is appropriate.** §2.3 explicitly compresses to an Operator Narrative paragraph in lieu of full UJs, citing `bmad-prd` guidance for single-operator internal tooling. Right call.
+- **PASS — Persona apparatus is correctly absent.** Brief explicitly excludes persona work; PRD honours.
+- **PASS — Glossary is the right shape for the L&L.** ~12 terms, definitions not tutorials, UDA 1.0 section anchors. Covers SSDP, GENA, SCPD, M-SEARCH, NOTIFY, eager fetch, callback host. Suitable for a BMad-curious-but-UPnP-novice attendee.
+- **low — Some FR consequence sections drift toward architecture detail** (PRD §4.1 FR-053, §4.2 FR-043, §4.11 FR-049). Tests-as-consequences are valuable but a few — e.g. FR-049's "MUST NOT register a URL ACL via `netsh http`", "MUST NOT rely on `System.Net.HttpListener`" — are implementation prohibitions belonging in the architecture document. Defensible because they're load-bearing decisions inherited from UpnpSpy (the addendum is emphatic that TcpListener is the ergonomic win), but they sit awkwardly in a PRD. *Fix:* either move the "MUST NOT use HttpListener / netsh" prohibitions to architecture and keep FR-049 at the capability level ("no Admin required, no install-time ACL step"), or note in §0 that some FRs carry their architecture-prescribed implementation forward from UpnpSpy because it is itself the named fix.
+- **low — BMM/WDS lane jargon in §7** (PRD §7). See Non-Goals finding above. L&L attendees will not all know what BMM vs WDS means. *Fix:* gloss or drop.
+- **low — "[ASSUMPTION]" tags throughout the PRD will read oddly in a live walkthrough** (PRD §4.5, §4.9, §4.10, §5.2, §11). They are useful for review-phase tracking but break the document's narrative flow. *Fix:* either resolve them before the L&L (preferred — they exist to be resolved), or move them all into §11 Assumptions Index with back-references and drop the inline tags.

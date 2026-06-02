@@ -1,0 +1,97 @@
+# generated: 2026-06-01
+# last_updated: 2026-06-01
+# Story 1.1 context created via bmad-create-story 2026-06-01.
+# project: ohSpy
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-06-01
+last_updated: 2026-06-01
+# 2026-06-01: Story 1.1 moved ready-for-dev → in-progress → review by dev-story workflow.
+# 2026-06-01: Story 1.1 moved review → done by Sonnet code-review (bmad-code-review).
+project: ohSpy
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # Epic 1 — Project Foundation & Test Infrastructure
+  epic-1: in-progress
+  1-1-project-scaffold-build-test-installer-pipeline: done
+  1-2-ui-dispatcher-contract-collection-primitives: backlog
+  1-3-upnp-http-client-facade-with-per-request-timeout-discipline: backlog
+  1-4-xml-parsers-scpd-streaming-device-description-with-xxe-defence: backlog
+  1-5-diagnostic-emitter-ring-sink-file-sink: backlog
+  1-6-fakeupnpdevice-minimal-modes-first-chaos-test-netarchtest-rules: backlog
+  epic-1-retrospective: optional
+
+  # Epic 2 — Device Discovery & Tree Browsing
+  epic-2: backlog
+  2-1-ssdp-transport-multicast-search-sockets-with-bounded-channel: backlog
+  2-2-network-adapter-enumerator-adapter-scope-startup-bind: backlog
+  2-3-device-registry-descriptionfetchstate-machine-eager-description-dispatcher: backlog
+  2-4-ssdp-parser-discoveryservice-wire-transport-into-registry: backlog
+  2-5-main-window-shell-device-tree-top-level-rows: backlog
+  2-6-service-action-expansion-lazy-scpd-incremental: backlog
+  2-7-ssdp-message-log-right-pane-virtualised-smart-auto-follow: backlog
+  2-8-right-click-context-menus-xml-viewing-in-default-browser: backlog
+  2-9-window-ownership-manager-properties-window-first-popup: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3 — Action Invocation
+  epic-3: backlog
+  3-1-soap-envelope-builder-fault-parser-and-invokeactionasync-wire-up: backlog
+  3-2-invocation-popup-with-free-form-text-inputs: backlog
+  3-3-constrained-inputs-allowedvaluelist-dropdown-allowedvaluerange-numeric: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4 — GENA Subscription
+  epic-4: backlog
+  4-1-event-callback-host-tcplistener-hand-rolled-http-1-1-parser: backlog
+  4-2-subscription-client-subscribe-renew-unsubscribe-lifecycle-with-auto-renewal: backlog
+  4-3-subscription-popup-event-list-latest-property-values-multiple-concurrent-popups: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5 — Operator Tooling — Diagnostics, Adapter Switch, Rescan
+  epic-5: backlog
+  5-1-diagnostics-viewer-window: backlog
+  5-2-adapter-switch-view-network-adapter-menu-atomic-rebind: backlog
+  5-3-rescan-view-rescan-menu-prune-non-responders: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6 — Polish, Soak & Release Readiness
+  epic-6: backlog
+  6-1-manual-ui-verification-fr-044-fr-046-fr-054-behaviours: backlog
+  6-2-soak-tests-30-min-no-crash-8-hour-scale-ceiling: backlog
+  6-3-performance-budget-verification-clean-machine-install-dry-run: backlog
+  epic-6-retrospective: optional
