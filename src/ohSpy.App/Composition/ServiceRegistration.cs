@@ -67,6 +67,13 @@ internal static class ServiceRegistration
         // (Story 2.2). No consumer wires it until DiscoveryService (Story 2.4).
         services.AddSingleton<ISsdpTransport, SsdpTransport>();
 
+        // Story 2.2 — Network adapter enumeration (FR-048). Singletons: stateless query
+        // services. AdapterScope is NOT registered here — it is constructed by the
+        // app-startup orchestrator (App.OnLaunched; relocated to ShellViewModel in 2.5)
+        // because its lifetime is bounded by adapter selection (Pattern 7 + Decision 7).
+        services.AddSingleton<INetworkInterfaceSource, LiveNetworkInterfaceSource>();
+        services.AddSingleton<INetworkAdapterEnumerator, NetworkAdapterEnumerator>();
+
         return services;
     }
 }
