@@ -283,11 +283,13 @@ var http = new HttpClient(handler, disposeHandler: true)
 
 **Facade contract (`ohSpy.Core/Http/IUpnpHttpClient.cs`):**
 
+> *Patched 2026-06-02 by [Amendment A10 — Story 1.3 implementation reality](#amendment-a10--fetchdevicedescriptionasync--fetchscpdasync-return-type-symmetry-decision-3-refinement): both Fetch methods now return `Task<byte[]>` (raw bytes; parsing is Story 1.4's concern). The D5 revision that moved `FetchScpdAsync` from `Task<ScpdDocument>` to `Task<byte[]>` should have been mirrored here for `FetchDeviceDescriptionAsync`. Consumers compose `IDeviceDescriptionParser` / `IScpdParser` over the raw bytes.*
+
 ```csharp
 public interface IUpnpHttpClient
 {
-    Task<DeviceDescription> FetchDeviceDescriptionAsync(Uri locationUrl, CancellationToken ct);
-    Task<ScpdDocument>      FetchScpdAsync(Uri scpdUrl, CancellationToken ct);
+    Task<byte[]>            FetchDeviceDescriptionAsync(Uri locationUrl, CancellationToken ct);
+    Task<byte[]>            FetchScpdAsync(Uri scpdUrl, CancellationToken ct);
     Task<SoapResponse>      InvokeActionAsync(SoapRequest request, CancellationToken ct);
     Task<SubscribeResponse> SubscribeAsync(Uri eventSubUrl, Uri callbackUrl, TimeSpan requestedTimeout, CancellationToken ct);
     Task<SubscribeResponse> RenewSubscriptionAsync(Uri eventSubUrl, string sid, TimeSpan requestedTimeout, CancellationToken ct);
@@ -2546,8 +2548,13 @@ public sealed class UpnpTransportException : UpnpException
     public Uri Url { get; }
     public int? StatusCode { get; }
 
+    // Patched 2026-06-02 by Amendment A9 — Story 1.3 implementation reality.
+    // Original form: `: base(message, inner ?? new InvalidOperationException(message))`
+    // synthesised a fake inner exception when none was supplied, misleading
+    // debuggers and masking the null-inner state. Exception(string, Exception?)
+    // accepts null cleanly; pass it through.
     public UpnpTransportException(Uri url, string message, int? statusCode = null, Exception? inner = null)
-        : base(message, inner ?? new InvalidOperationException(message))
+        : base(message, inner)
     {
         Url = url; StatusCode = statusCode;
     }
@@ -2651,6 +2658,94 @@ This was foreseen in the Story 1.1 spec (added as a conditional in the original 
 **Correction applied to:** Decision 12's "csproj changes (consequence)" snippet (above), replaced with the canonical Story 1.1 implementation.
 
 **Implementation evidence:** `src/ohSpy.App/ohSpy.App.csproj`.
+
+---
+
+### Amendment A9 — `UpnpTransportException` ctor synthetic-inner smell (Decision 3 / Amendment A5 refinement)
+
+**Source:** Story 1.3 (`1-3-upnp-http-client-facade-with-per-request-timeout-discipline`) implementation, confirmed by Sonnet code-review of commit `8a6fb44` (2026-06-02).
+
+**Issue.** Amendment A5's `UpnpTransportException` ctor originally read:
+
+```csharp
+public UpnpTransportException(Uri url, string message, int? statusCode = null, Exception? inner = null)
+    : base(message, inner ?? new InvalidOperationException(message))
+```
+
+The `inner ?? new InvalidOperationException(message)` fabricates a fake inner exception when none is supplied. This:
+
+1. Misleads debugger / stack-trace tooling — a synthetic `InvalidOperationException` appears in the `InnerException` chain that didn't really occur.
+2. Costs an unnecessary allocation on every non-inner-bearing throw.
+3. Hides the genuine null-inner state — diagnostic consumers that check `ex.InnerException == null` to detect "this is a fresh top-level error" never see null.
+
+**Correction.** Accept the null inner cleanly. `System.Exception(string?, Exception?)` (the BCL base ctor) handles null `inner` correctly:
+
+```csharp
+public UpnpTransportException(Uri url, string message, int? statusCode = null, Exception? inner = null)
+    : base(message, inner)
+```
+
+The `UpnpException` abstract base may need its `Exception inner` ctor overload widened to `Exception? inner` for the call site to compile cleanly under `<Nullable>enable</Nullable>`; the consuming dev story (this one, retroactively) decides whether to apply the abstract-base fix too or to use a null-forgiving operator (`!`) at the single call site.
+
+**Correction applied to:** Amendment A5's `UpnpTransportException` ctor (above), with an inline comment linking to this amendment.
+
+**Implementation evidence:** Story 1.3 shipped the original verbatim form (`src/ohSpy.Core/Http/UpnpExceptions.cs`) to preserve architecture-match; A9 is a doc-first amendment. A small follow-up commit to that file will apply the fix in code — Story 1.4 or any author who touches `UpnpExceptions.cs` next can pick it up.
+
+---
+
+### Amendment A10 — `FetchDeviceDescriptionAsync` / `FetchScpdAsync` return-type symmetry (Decision 3 refinement)
+
+**Source:** Story 1.3 implementation. The dev agent observed that D5's later revision moved `FetchScpdAsync` from `Task<ScpdDocument>` to `Task<byte[]>` (parsing is the caller's concern — `IScpdParser` from Story 1.4 + FR-100 incremental parse), but the equivalent revision of `FetchDeviceDescriptionAsync` from `Task<DeviceDescription>` to `Task<byte[]>` never landed in the architecture text. The two Fetch methods should be symmetric: both return raw bytes; consumers compose their respective parsers over them.
+
+**Issue.** D3's interface signature showed:
+
+```csharp
+Task<DeviceDescription> FetchDeviceDescriptionAsync(Uri locationUrl, CancellationToken ct);
+Task<ScpdDocument>      FetchScpdAsync(Uri scpdUrl, CancellationToken ct);  // pre-D5 revision
+```
+
+After D5 revised `FetchScpdAsync` to `Task<byte[]>`, the device-description return type was left unchanged — a likely oversight, not a deliberate design choice.
+
+**Correction.** Both Fetch methods return `Task<byte[]>`:
+
+```csharp
+Task<byte[]>            FetchDeviceDescriptionAsync(Uri locationUrl, CancellationToken ct);
+Task<byte[]>            FetchScpdAsync(Uri scpdUrl, CancellationToken ct);
+```
+
+The architectural reasoning is identical to D5's rationale: separate network fetch (I/O-bound, timeout-disciplined) from XML parse (CPU-bound, yield-disciplined). Consumers (Story 2.3's `EagerDescriptionDispatcher`, Story 2.6's lazy SCPD expansion) compose the parser.
+
+**Correction applied to:** Decision 3's `IUpnpHttpClient` facade contract (above).
+
+**Implementation evidence:** Story 1.3 already shipped `Task<byte[]>` for both methods (`src/ohSpy.Core/Http/IUpnpHttpClient.cs`), so this amendment is purely a doc-text fix to close the gap between code and architecture. Story 1.4 (XML parsers) will inherit the corrected guidance and consume raw bytes.
+
+---
+
+### Amendment A11 — Test-tree analyzer exemption conventions (Pattern 6 refinement)
+
+**Source:** Stories 1.1–1.3 incremental additions to `.editorconfig`; consolidated 2026-06-02 by Story 1.3's code review.
+
+**Context.** The `[tests/**/*.cs]` exemption block in `.editorconfig` has accumulated several analyzer suppressions across stories, each with a `# justification` comment but no central architectural reference. The canonical list as of Story 1.3:
+
+| Analyzer | Suppressed in tests | Justification |
+|---|---|---|
+| `VSTHRD100` | `async void` without `try/catch` | xUnit + Moq fixture patterns require `async void` for event-handler test doubles. Added Story 1.1. |
+| `CA1707` | underscores in identifiers | xUnit `Method_Scenario_ExpectedResult` naming idiom. Added Story 1.2. |
+| `CA1806` | constructor side-effect (`new` not assigned) | FluentAssertions `act.Should().Throw<T>()` pattern accepts `Action act = () => new MyType(...)`. Added Story 1.2. |
+| `VSTHRD003` | await on task started elsewhere | Cancellation-testing pattern: caller's CTS is observed by the under-test code, which awaits a TCS-backed task started by the test handler. Added Story 1.3. |
+| `CA2263` | prefer generic type-parameter overload | `[InlineData(typeof(T))]` mandates the runtime-`Type` overload — xUnit's `[Theory]` attribute machinery doesn't support generic type parameters in inline-data. Added Story 1.3. |
+
+**Position.** These exemptions are scoped to `tests/**` only — production code (`src/ohSpy.Core/**` + `src/ohSpy.App/**`) enforces every analyzer. The pattern works; the only architectural improvement is **discoverability**: future story authors should be able to find the canonical list without grepping `.editorconfig`.
+
+**Correction.** No change to Pattern 6's existing async-discipline text. The exemption list above is the canonical reference; future additions to the test-tree exemption block should:
+
+1. Add the analyzer ID + justification to the `.editorconfig` block (existing pattern).
+2. Update the table in this amendment.
+3. Cite the originating story.
+
+Mechanical only — no code or pattern changes required.
+
+**Implementation evidence:** `.editorconfig` test-tree block as of commit `8a6fb44`.
 
 ---
 
