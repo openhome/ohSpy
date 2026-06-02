@@ -13,11 +13,11 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NetArchTest.Rules" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
-    <!-- Story 1.3: AC-11.3 tests verify services.Configure<HttpTimeoutOptions> + BuildServiceProvider. -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-    <PackageReference Include="Microsoft.Extensions.Options" />
-    <!-- Story 1.5: DiagnosticEmitter tests need ILogger<>; DiagnosticFileSink ctor takes ILogger<>. -->
-    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <!-- Story 1.6: FakeUpnpDevice uses Kestrel + WebApplication. Shared framework ships with .NET 10 SDK
+         (no PackageVersion to maintain, no Directory.Packages.props edit). It also transitively provides
+         Microsoft.Extensions.{DependencyInjection,Options,Logging} so the explicit Story 1.3 / 1.5
+         PackageReferences for those are pruned (NU1510). [A16 amendment candidate] -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>

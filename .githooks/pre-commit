@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 # Runs the chaos test category to catch NFR-P2 regressions.
 # Wall-clock budget: ~5s. Fail the commit if any chaos test fails.
-# Full chaos-test integration lands in Story 1.6. Until then, the filter matches zero tests
-# and exits 0 trivially.
+# Story 1.6 activated this hook by populating the chaos suite (first chaos test:
+# UpnpHttpClientChaosTests.FetchScpdAsync_HangAfter200Ok_ThrowsUpnpTimeoutException_AC35).
+#
+# Filter syntax note (A16 amendment candidate, surfaced in Story 1.6):
+#   The architecture/epics-spec text shows the filter as `Trait=category&Value=chaos`,
+#   which is MSTest TestProperty syntax — xUnit's VSTest adapter ignores it and
+#   silently matches zero tests (this is why the hook was trivially-passing for
+#   Stories 1.1–1.5). The correct xUnit-adapter syntax is `<traitName>=<traitValue>`,
+#   case-sensitive. So `category=chaos` is the actual working filter.
 set -e
 echo "Running chaos tests..."
-dotnet test --filter "Trait=category&Value=chaos" --nologo --verbosity quiet
+dotnet test --filter "category=chaos" --nologo --verbosity quiet
