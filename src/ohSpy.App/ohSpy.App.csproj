@@ -39,6 +39,7 @@
   <!-- Package versions live in Directory.Packages.props (Central Package Management). -->
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
 
   <ItemGroup>

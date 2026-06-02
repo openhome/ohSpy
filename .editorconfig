@@ -136,6 +136,12 @@ csharp_preserve_single_line_blocks = true
 # Modifier preferences
 visual_basic_preferred_modifier_order = Partial,Default,Private,Protected,Public,Friend,NotOverridable,Overridable,MustOverride,Overloads,Overrides,MustInherit,NotInheritable,Static,Shared,Shadows,ReadOnly,WriteOnly,Dim,Const,WithEvents,Widening,Narrowing,Custom,Async:suggestion
 
-# VSTHRD100 (async void without try/catch) is exempt in test fixtures — Moq + xUnit patterns require it.
+# Tests/** rules:
+# - VSTHRD100 (async void without try/catch): exempt — Moq + xUnit patterns require it.
+# - CA1707 (no underscores in names): exempt — `Method_Scenario_Expected` is the standard xUnit naming convention.
+# - CA1806 (constructor result discarded): exempt — `Action act = () => new T(badArg)` is the idiomatic FluentAssertions
+#   pattern for asserting that a constructor throws; the instance is intentionally not retained.
 [tests/**/*.cs]
 dotnet_diagnostic.VSTHRD100.severity = none
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.CA1806.severity = none
