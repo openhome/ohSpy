@@ -2896,6 +2896,82 @@ The M-SEARCH self-receive test worked because M-SEARCH is multicast; the failing
 
 ---
 
+### Amendment A27 — `RegistryEntry.DeviceCts` must use `CreateLinkedTokenSource(adapterToken)` and be disposed on removal (Decision 9 refinement)
+
+**Source:** Story 2.3 (`2-3-device-registry-descriptionfetchstate-machine-eager-description-dispatcher`) implementation + Sonnet code-review (2026-06-02).
+
+**Issue (two related defects in D9's code sketch):**
+
+1. **Wrong initialiser.** D9's `RegistryEntry` code sketch shows `internal CancellationTokenSource DeviceCts { get; } = new()` — a standalone CTS. The architecture's own Decision 7 table (line 744) says the device level is "linked to adapter token", and the epics AC explicitly requires `CreateLinkedTokenSource(adapterToken)`. The sketch was never reconciled with D7.
+
+2. **Missing `Dispose()`.** `CancellationTokenSource.CreateLinkedTokenSource(adapterToken)` registers a callback node in the parent token's internal `CallbackPartition` linked list. That node is only released when `Dispose()` is called on the linked CTS — `Cancel()` alone does not release it. D9's sketch and the architecture narrative mention `Cancel()` at byebye but are silent on `Dispose()`. On a busy network with frequent device arrivals and departures, each removal without `Dispose()` permanently holds a slot on the adapter's `_adapterCts` until the adapter itself is torn down, accumulating O(N) leaked callback registrations.
+
+**Correction.** Two changes to `RegistryEntry` and `DeviceRegistry.RemoveCore`:
+
+```csharp
+// RegistryEntry ctor (correct form — not the sketch's = new()):
+DeviceCts = CancellationTokenSource.CreateLinkedTokenSource(adapterToken);
+DeviceToken = DeviceCts.Token; // snapshot before Dispose() could invalidate .Token
+
+// DeviceRegistry.RemoveCore (correct form):
+entry.DeviceCts.Cancel();   // AC-7.2: cancel the device's in-flight fetch
+entry.DeviceCts.Dispose();  // release the linked-token callback on the adapter CTS
+```
+
+**Why `DeviceToken` must be snapshotted.** `CancellationTokenSource.Token` throws `ObjectDisposedException` after `Dispose()`. Any caller checking `entry.DeviceToken.IsCancellationRequested` after byebye (e.g. the test harness, or a future VM holding a stale reference) would crash. Storing the token as a field at construction time makes it permanently readable — the snapshotted `CancellationToken` value type already reflects the cancelled state via its internal `_source` reference without re-entering the CTS.
+
+**Applied to:** `src/ohSpy.Core/Devices/RegistryEntry.cs` (ctor + `DeviceToken` property), `src/ohSpy.Core/Devices/DeviceRegistry.cs` (`RemoveCore`). Story 2.3 implements the correct form; this amendment patches D9's sketch so downstream stories don't copy the wrong version.
+
+---
+
+### Amendment A28 — Decision 9 FetchAsync sketch has two inaccuracies: `RootUdn:Guid` and "no locks" (Decision 9 refinement)
+
+**Source:** Story 2.3 implementation + Sonnet code-review (2026-06-02). Two independent inaccuracies in D9's `FetchAsync` pseudo-code and threading narrative.
+
+**Inaccuracy 1 — `description.RootUdn != entry.Uuid` (wrong field name, wrong type).**
+
+D9's sketch writes `if (description.RootUdn != entry.Uuid)` — implying `RootUdn` is a `Guid`. The real `DeviceDescription` model (Amendment A10, `src/ohSpy.Core/Models/DeviceDescription.cs`) exposes `string Udn`, carrying the raw UPnP `<UDN>` text `"uuid:<guid>"`. A naive `description.Udn != entry.Uuid.ToString()` compare false-mismatches every real device (prefix mismatch + hex casing). The correct check requires normalisation:
+
+```csharp
+internal static bool UdnMatches(string udn, Guid uuid)
+{
+    var s = udn.StartsWith("uuid:", StringComparison.OrdinalIgnoreCase) ? udn[5..] : udn;
+    return Guid.TryParse(s, out var parsed) && parsed == uuid;
+}
+```
+
+**Inaccuracy 2 — "no locks" prose omits the cross-thread read via identity lookup.**
+
+D9 states "no fields require `volatile` or locks" — correct for `RegistryEntry` field *writes* (all UI-thread). However, `DeviceRegistry`'s backing collection is read off the UI thread by `RegistryIdentityLookup → DiagnosticRingSink.Push` (which resolves identity on the emitting thread — confirmed at `DiagnosticRingSink.cs:27`). A plain `Dictionary<Guid, RegistryEntry>` read concurrent with a UI-thread `Add`/`Remove` is a data race (torn-read / corruption). The registry's backing store must be `ConcurrentDictionary<Guid, RegistryEntry>`:
+
+> The "no locks" guarantee applies to `RegistryEntry` *field* mutations (all UI-thread). `DeviceRegistry`'s *collection* requires `ConcurrentDictionary` because `TryGetEntry` is read on the emitting thread (identity lookup path). `RegistryEntry.Description` reference reads are safe off-thread (atomic reference read in .NET); a slightly-stale `null` yields the `uuid:<uuid>` fallback.
+
+**Applied to:** `src/ohSpy.Core/Devices/DeviceRegistry.cs` (ConcurrentDictionary backing), `src/ohSpy.Core/Devices/EagerDescriptionDispatcher.cs` (`UdnMatches` static helper). Update D9's `FetchAsync` sketch to replace `description.RootUdn != entry.Uuid` with a call to `UdnMatches(description.Udn, entry.Uuid)`. Update D9's threading narrative to note the ConcurrentDictionary requirement and its rationale.
+
+---
+
+### Amendment A29 — Allocation-sensitive tests must use thread-local GC measurement (Pattern 15 / testing-standards refinement)
+
+**Source:** Story 2.3 implementation (2026-06-02). Surfaced when new test classes increased parallel xUnit load.
+
+**Issue.** `DiagnosticEmitterTests.Verbose_BelowMinSeverity_AllocatesZeroDiagnosticEntries` (AC-8.7) measured **process-wide** allocations via `GC.GetTotalAllocatedBytes(precise: true)`. xUnit runs test classes in parallel by default; a process-wide counter folds in allocations from concurrently-running tests on other threads. Story 2.3's ~36 new test classes increased that background allocation pressure, causing the assertion to fail once in the full run while passing immediately in isolation.
+
+**Correction.** Allocation-sensitive tests must use **`GC.GetAllocatedBytesForCurrentThread()`** (thread-local), which isolates the measured loop from other threads:
+
+```csharp
+// WRONG — polluted by concurrent xUnit threads:
+var before = GC.GetTotalAllocatedBytes(precise: true);
+
+// CORRECT — thread-local, immune to parallelism:
+var before = GC.GetAllocatedBytesForCurrentThread();
+```
+
+**Testing-standards rule (append to Pattern 14/15 in the architecture):** Any test asserting zero or near-zero allocations per operation MUST use `GC.GetAllocatedBytesForCurrentThread()`. `GC.GetTotalAllocatedBytes` is process-wide and non-deterministic under xUnit parallelism regardless of test isolation annotations.
+
+**Applied to:** `tests/ohSpy.Core.Tests/Diagnostics/DiagnosticEmitterTests.cs` (Story 2.3). Future zero-allocation tests (e.g. SSDP channel path, Description parsing hot-path) must follow this pattern.
+
+---
+
 ### Decision 13 — Pre-Commit Chaos Hook (the regression net replacing CI)
 
 **Chosen:** Git pre-commit hook at `.githooks/pre-commit` running the chaos test suite before every commit. Without CI (Decision 12), this is the regression net that catches `.Result` regressions and broken NFR-P2 invariants before they're merged.
