@@ -248,6 +248,10 @@ public interface ISsdpTransport : IAsyncDisposable
 
 **Adapter switch (FR-050):** `ISsdpTransport.DisposeAsync()` is part of the atomic rebind — it closes both sockets, leaves the multicast group cleanly, and disposes the channel. A fresh transport is then constructed on the newly-selected adapter.
 
+**Test contract (patched 2026-06-02 by Amendment A22 — Windows multicast-only delivery):**
+
+SSDP transport integration tests MUST deliver test datagrams via the multicast group (`239.255.255.250:1900`), NOT by unicast to `(adapter, 1900)`. On Windows, the built-in `SSDPSRV` service co-binds `*:1900` with `ReuseAddress`; the OS delivers a unicast datagram to only ONE of the reuse-bound sockets and may pick `SSDPSRV` instead of the transport-under-test. Multicast is fanned out to all group members, so the transport's joined listener reliably receives it. Receive-side assertions MUST include a unique `USN` marker per test + a read-until-match loop so live-network NOTIFYs from real devices on a real adapter do not pollute assertions. This rule is load-bearing for Story 2.4 (SSDP parser + chaos tests) and every subsequent SSDP receive test.
+
 **Rationale:**
 
 - Two sockets sidestep port-1900 contention with Windows `SSDPSRV`. `ReuseAddress` works most of the time on a single socket, but "most of the time" is exactly what NFR-R1 precludes.
@@ -2816,6 +2820,38 @@ Verified by the code-review's live test run:
 **Future-proofing.** xUnit's VSTest filter syntax is documented at <https://github.com/Microsoft/vstest-docs/blob/main/docs/filter.md>: trait filters use `<TraitName>=<Value>` form (case-sensitive trait name). MSTest's `Trait=X&Value=Y` form does not apply. Any future hook additions to D13 must use xUnit syntax.
 
 **Implementation evidence:** `.githooks/pre-commit` in commit `50345c9` (Story 1.6) carries the fix. Architecture D13 patched in the next docs commit.
+
+---
+
+### Amendment A22 — SSDP integration tests must deliver via multicast on Windows (Decision 2 refinement)
+
+**Source:** Story 2.1 (`2-1-ssdp-transport-multicast-search-sockets-with-bounded-channel`) implementation; **confirmed by Sonnet code-review of commit `bafe206`-descendant (2026-06-02).**
+
+**Issue.** D2's prose did not pin the *delivery method* SSDP integration tests must use. The dev agent's first instinct on the receive test was to deliver the canned NOTIFY by **unicast** to `(adapter_ipv4, 1900)`. The test timed out with the transport receiving nothing — despite the same code path working perfectly for the M-SEARCH self-receive test minutes earlier.
+
+**Root cause.** Windows `SSDPSRV` (the built-in OS-level SSDP service) co-binds `*:1900` with `ReuseAddress`. Our transport's multicast listener ALSO binds `(adapter_ipv4, 1900)` with `ReuseAddress` — required by D2 to coexist. With two reuse-bound sockets on the same port:
+
+- A **unicast** datagram is delivered to only ONE of them. Windows picks; in practice it picks `SSDPSRV` (which then silently drops it because the M-SEARCH-only filter doesn't match a NOTIFY). The transport-under-test never sees the datagram.
+- A **multicast** datagram (sent to `239.255.255.250:1900`) is fanned out to ALL group members. Both `SSDPSRV` and our transport receive it. The transport-under-test's `ReceiveFromAsync` returns.
+
+The M-SEARCH self-receive test worked because M-SEARCH is multicast; the failing receive test used unicast. Same sockets, same code — only the delivery method differed. Clean falsifiable diagnosis.
+
+**Correction.** D2's narrative now carries an explicit **"Test contract"** subsection (patched in this amendment) pinning the rule:
+
+> SSDP transport integration tests MUST deliver test datagrams via the multicast group (`239.255.255.250:1900`), NOT by unicast to `(adapter, 1900)`. Receive-side assertions MUST include a unique `USN` marker per test + a read-until-match loop so live-network NOTIFYs from real devices on a real adapter do not pollute assertions.
+
+**Why the read-until-match loop matters.** Even on loopback, a developer machine sitting on a real LAN sometimes sees unsolicited NOTIFYs from real devices leak through (depending on adapter selection and OS multicast routing). Without a USN-marker filter, those NOTIFYs land in the channel and the first-datagram assertion fails non-deterministically. The pattern Story 2.1's tests established: generate a per-test GUID, embed it in the canned `USN: uuid:<guid>` header, then read from the channel until you see that exact marker (with a bounded timeout).
+
+**Applied to:**
+
+- D2 §"Test contract" — new subsection authored above (after the "Adapter switch (FR-050)" paragraph; before the "Rationale" block).
+- Subsequent SSDP-story specs (Story 2.4 SSDP parser + chaos tests, any Epic 5 rescan tests that exercise the transport) inherit the rule via the architecture; create-story for those stories should surface it in their Dev Notes.
+
+**Why this surfaced at Story 2.1, not earlier:** Story 2.1 is the first story that wires sockets onto port 1900. No earlier story did. The interaction with `SSDPSRV` was not foreseeable from the architecture-level decision alone — it's a Windows-specific socket-delivery quirk that only shows up under the exact conditions D2 mandates (reuse-bound multicast listener on the standard port).
+
+**Implementation evidence:** `tests/ohSpy.Core.Tests/Discovery/SsdpTransportTests.cs` in Story 2.1 commits — the receive tests deliver via multicast with USN markers + read-until-match. The first version of the test that delivered by unicast was discarded in the dev-story workflow before review; the lesson is preserved here so it isn't re-discovered by Story 2.4.
+
+**Carry-forward to future implementers.** If you find yourself writing an SSDP receive test that uses unicast because "it's simpler," stop. The simpler path is broken on Windows by design. The multicast + USN-marker pattern Story 2.1 codified is the canonical SSDP test delivery method.
 
 ---
 
