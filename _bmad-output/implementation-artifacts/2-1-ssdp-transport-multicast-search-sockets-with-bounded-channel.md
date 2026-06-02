@@ -1,6 +1,10 @@
+---
+baseline_commit: bafe206835aadcd824b6e50e5ba909a9a69a62d2
+---
+
 # Story 2.1: SSDP Transport — Multicast + Search Sockets with Bounded Channel
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -96,7 +100,7 @@ so that subsequent stories have a stable, source-tagged datagram stream to parse
 
 ### Task 1 — Models: `SsdpDatagram` + `SsdpSource` (AC: #1)
 
-- [ ] **1.1** Create `src/ohSpy.Core/Models/SsdpSource.cs`:
+- [x] **1.1** Create `src/ohSpy.Core/Models/SsdpSource.cs`:
   ```csharp
   namespace ohSpy.Core.Models;
 
@@ -106,7 +110,7 @@ so that subsequent stories have a stable, source-tagged datagram stream to parse
       SearchResponse,
   }
   ```
-- [ ] **1.2** Create `src/ohSpy.Core/Models/SsdpDatagram.cs`:
+- [x] **1.2** Create `src/ohSpy.Core/Models/SsdpDatagram.cs`:
   ```csharp
   namespace ohSpy.Core.Models;
 
@@ -118,13 +122,13 @@ so that subsequent stories have a stable, source-tagged datagram stream to parse
       DateTime ArrivalUtc,
       SsdpSource Source);
   ```
-- [ ] **1.3** Both files use file-scoped namespace, one type per file (Pattern 1). `byte[]` is the raw datagram bytes — no parsing in this story (parsing is Story 2.4).
-- [ ] **1.4** `DateTime.UtcNow` populated at receive-loop wakeup, NOT here (record is a pure data carrier — Pattern 9).
+- [x] **1.3** Both files use file-scoped namespace, one type per file (Pattern 1). `byte[]` is the raw datagram bytes — no parsing in this story (parsing is Story 2.4).
+- [x] **1.4** `DateTime.UtcNow` populated at receive-loop wakeup, NOT here (record is a pure data carrier — Pattern 9).
 
 ### Task 2 — Folder + interface: `ISsdpTransport` (AC: #2)
 
-- [ ] **2.1** Create folder `src/ohSpy.Core/Discovery/` (new — does not exist yet).
-- [ ] **2.2** Create `src/ohSpy.Core/Discovery/ISsdpTransport.cs`:
+- [x] **2.1** Create folder `src/ohSpy.Core/Discovery/` (new — does not exist yet).
+- [x] **2.2** Create `src/ohSpy.Core/Discovery/ISsdpTransport.cs`:
   ```csharp
   namespace ohSpy.Core.Discovery;
 
@@ -144,12 +148,12 @@ so that subsequent stories have a stable, source-tagged datagram stream to parse
       ChannelReader<SsdpDatagram> IncomingDatagrams { get; }
   }
   ```
-- [ ] **2.3** XML doc comments on each member describing pre/post-conditions; reference D2 / D7 inline so future readers find the rationale.
+- [x] **2.3** XML doc comments on each member describing pre/post-conditions; reference D2 / D7 inline so future readers find the rationale.
 
 ### Task 3 — Impl: `SsdpTransport` socket setup (AC: #3, #4)
 
-- [ ] **3.1** Create `src/ohSpy.Core/Discovery/SsdpTransport.cs`. Class is `internal sealed` (per Pattern 7 the DI registration in App composition uses the interface; the impl is internal). Add `InternalsVisibleTo` is already in place — `ohSpy.Core.csproj` grants visibility to both `ohSpy.Core.Tests` and `ohSpy.App` (no csproj edit needed).
-- [ ] **3.2** Ctor takes `IDiagnosticEmitter` only — no `IUiDispatcher` (this is a non-UI transport service; receive loops live on background tasks). Primary constructor is fine (Pattern 8):
+- [x] **3.1** Create `src/ohSpy.Core/Discovery/SsdpTransport.cs`. Class is `internal sealed` (per Pattern 7 the DI registration in App composition uses the interface; the impl is internal). Add `InternalsVisibleTo` is already in place — `ohSpy.Core.csproj` grants visibility to both `ohSpy.Core.Tests` and `ohSpy.App` (no csproj edit needed).
+- [x] **3.2** Ctor takes `IDiagnosticEmitter` only — no `IUiDispatcher` (this is a non-UI transport service; receive loops live on background tasks). Primary constructor is fine (Pattern 8):
   ```csharp
   internal sealed class SsdpTransport(IDiagnosticEmitter diag) : ISsdpTransport
   {
@@ -169,8 +173,8 @@ so that subsequent stories have a stable, source-tagged datagram stream to parse
       // … rate-limit counters per Task 5.5
   }
   ```
-- [ ] **3.3** `StartAsync(IPAddress adapterIPv4, CancellationToken ct)` — guard against double-start (`if (_multicastSocket is not null) throw new InvalidOperationException("StartAsync already called")`).
-- [ ] **3.4** Build the channel BEFORE the sockets so receive loops can post immediately:
+- [x] **3.3** `StartAsync(IPAddress adapterIPv4, CancellationToken ct)` — guard against double-start (`if (_multicastSocket is not null) throw new InvalidOperationException("StartAsync already called")`).
+- [x] **3.4** Build the channel BEFORE the sockets so receive loops can post immediately:
   ```csharp
   _channel = Channel.CreateBounded<SsdpDatagram>(new BoundedChannelOptions(4096)
   {
@@ -179,7 +183,7 @@ so that subsequent stories have a stable, source-tagged datagram stream to parse
       SingleWriter = false,
   });
   ```
-- [ ] **3.5** Multicast listener socket — exact sequence (Order matters: `ReuseAddress` must precede `Bind`; `AddMembership` after `Bind`):
+- [x] **3.5** Multicast listener socket — exact sequence (Order matters: `ReuseAddress` must precede `Bind`; `AddMembership` after `Bind`):
   ```csharp
   var mcast = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
   mcast.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
@@ -190,7 +194,7 @@ so that subsequent stories have a stable, source-tagged datagram stream to parse
       new MulticastOption(SsdpMulticastAddress, adapterIPv4));
   _multicastSocket = mcast;
   ```
-- [ ] **3.6** Ephemeral search socket — adapter-scoped multicast egress (`MulticastInterface` is set as an `int`-shaped IPv4 address; use `adapterIPv4.GetAddressBytes()` reversed-to-network-order trick OR the simpler `IPAddress.HostToNetworkOrder` form — the canonical pattern is the address-bytes form):
+- [x] **3.6** Ephemeral search socket — adapter-scoped multicast egress (`MulticastInterface` is set as an `int`-shaped IPv4 address; use `adapterIPv4.GetAddressBytes()` reversed-to-network-order trick OR the simpler `IPAddress.HostToNetworkOrder` form — the canonical pattern is the address-bytes form):
   ```csharp
   var search = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
   search.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
@@ -203,12 +207,12 @@ so that subsequent stories have a stable, source-tagged datagram stream to parse
   _searchSocket = search;
   ```
   **Note:** the `MulticastInterface` option accepts either a `byte[]` (the address-bytes form, which is what we use here) or an `int` (network-order). Both work; address-bytes is more obviously correct.
-- [ ] **3.7** Store `_adapterIPv4` for later (`SendMSearchAsync` does not take it as a parameter — it uses the bound adapter).
-- [ ] **3.8** Build a run-CTS that links the caller's `ct` to a private CTS so `DisposeAsync` can cancel even if the caller didn't:
+- [x] **3.7** Store `_adapterIPv4` for later (`SendMSearchAsync` does not take it as a parameter — it uses the bound adapter).
+- [x] **3.8** Build a run-CTS that links the caller's `ct` to a private CTS so `DisposeAsync` can cancel even if the caller didn't:
   ```csharp
   _runCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
   ```
-- [ ] **3.9** Spawn receive loops via `Task.Run` for each socket; capture them in `_multicastLoop` / `_searchLoop` for `DisposeAsync` to await:
+- [x] **3.9** Spawn receive loops via `Task.Run` for each socket; capture them in `_multicastLoop` / `_searchLoop` for `DisposeAsync` to await:
   ```csharp
   _multicastLoop = Task.Run(() => ReceiveLoopAsync(mcast, SsdpSource.Multicast, _runCts.Token));
   _searchLoop    = Task.Run(() => ReceiveLoopAsync(search, SsdpSource.SearchResponse, _runCts.Token));
@@ -217,7 +221,7 @@ so that subsequent stories have a stable, source-tagged datagram stream to parse
 
 ### Task 4 — Receive loop (AC: #4, #8, #9)
 
-- [ ] **4.1** Implement `ReceiveLoopAsync(Socket s, SsdpSource source, CancellationToken token)` as a `private static async Task` (static — the loop closes over no mutable state beyond the channel writer captured via a parameter or wrapper). Actual shape:
+- [x] **4.1** Implement `ReceiveLoopAsync(Socket s, SsdpSource source, CancellationToken token)` as a `private static async Task` (static — the loop closes over no mutable state beyond the channel writer captured via a parameter or wrapper). Actual shape:
   ```csharp
   private async Task ReceiveLoopAsync(Socket s, SsdpSource source, CancellationToken token)
   {
@@ -276,14 +280,14 @@ so that subsequent stories have a stable, source-tagged datagram stream to parse
       }
   }
   ```
-- [ ] **4.2** **Why not pin the buffer per-loop and reuse?** The cost of one 64 KB allocation per datagram is negligible vs. typical SSDP rates (≤ 20 adv/s sustained per NFR target). Premature optimisation. Revisit only if profiling shows GC pressure under chatty-SSDP soak.
-- [ ] **4.3** **`ReceiveFromAsync` overload pick:** the modern `(Memory<byte>, SocketFlags, EndPoint, CancellationToken)` overload accepts the cancellation token directly — no manual `RegisterCallback` shenanigans (Pattern 6 — token threaded through every async).
-- [ ] **4.4** Use `ConfigureAwait(false)` on every `await` (Pattern 6 — Core library convention).
-- [ ] **4.5** Do not log every received datagram — SSDP traffic is noisy and `DiagSeverity.Verbose` is appropriate only at the parser layer (Story 2.4). The transport layer is silent on the happy path.
+- [x] **4.2** **Why not pin the buffer per-loop and reuse?** The cost of one 64 KB allocation per datagram is negligible vs. typical SSDP rates (≤ 20 adv/s sustained per NFR target). Premature optimisation. Revisit only if profiling shows GC pressure under chatty-SSDP soak.
+- [x] **4.3** **`ReceiveFromAsync` overload pick:** the modern `(Memory<byte>, SocketFlags, EndPoint, CancellationToken)` overload accepts the cancellation token directly — no manual `RegisterCallback` shenanigans (Pattern 6 — token threaded through every async).
+- [x] **4.4** Use `ConfigureAwait(false)` on every `await` (Pattern 6 — Core library convention).
+- [x] **4.5** Do not log every received datagram — SSDP traffic is noisy and `DiagSeverity.Verbose` is appropriate only at the parser layer (Story 2.4). The transport layer is silent on the happy path.
 
 ### Task 5 — `SendMSearchAsync` + channel-fill telemetry (AC: #5, #6)
 
-- [ ] **5.1** Implement `SendMSearchAsync(TimeSpan mx, CancellationToken ct)`:
+- [x] **5.1** Implement `SendMSearchAsync(TimeSpan mx, CancellationToken ct)`:
   ```csharp
   public async Task SendMSearchAsync(TimeSpan mx, CancellationToken ct)
   {
@@ -297,7 +301,7 @@ so that subsequent stories have a stable, source-tagged datagram stream to parse
       await _searchSocket.SendToAsync(bytes, SocketFlags.None, dest, ct).ConfigureAwait(false);
   }
   ```
-- [ ] **5.2** `BuildMSearchPayload(int mx)` returns ASCII bytes for the wire payload exactly per UDA 1.0 §1.2.2. CRLF line endings, blank line terminator:
+- [x] **5.2** `BuildMSearchPayload(int mx)` returns ASCII bytes for the wire payload exactly per UDA 1.0 §1.2.2. CRLF line endings, blank line terminator:
   ```text
   M-SEARCH * HTTP/1.1\r\n
   HOST: 239.255.255.250:1900\r\n
@@ -321,9 +325,9 @@ so that subsequent stories have a stable, source-tagged datagram stream to parse
   }
   ```
   **Why ASCII not UTF-8:** SSDP / HTTP framing is strict ASCII. UTF-8 incidentally matches for these bytes, but ASCII is the documentation-correct encoding and makes intent explicit.
-- [ ] **5.3** `MAN` header value MUST include the surrounding double quotes per RFC and UDA — `"ssdp:discover"` not `ssdp:discover`. Devices reject unquoted MAN.
-- [ ] **5.4** **Why no `ST: ssdp:all`?** D2 + FR-004 + FR-053 layer (a) explicitly: we only ever ask for `upnp:rootdevice`. The architecture's root-only-registration enforcement starts here at the wire — sending `ssdp:all` would invite embedded-device responses we'd have to filter out downstream.
-- [ ] **5.5** Channel telemetry — rate-limited emission. Naive "emit every time" is a diagnostic flood; emit at most once per second per category:
+- [x] **5.3** `MAN` header value MUST include the surrounding double quotes per RFC and UDA — `"ssdp:discover"` not `ssdp:discover`. Devices reject unquoted MAN.
+- [x] **5.4** **Why no `ST: ssdp:all`?** D2 + FR-004 + FR-053 layer (a) explicitly: we only ever ask for `upnp:rootdevice`. The architecture's root-only-registration enforcement starts here at the wire — sending `ssdp:all` would invite embedded-device responses we'd have to filter out downstream.
+- [x] **5.5** Channel telemetry — rate-limited emission. Naive "emit every time" is a diagnostic flood; emit at most once per second per category:
   ```csharp
   private long _lastNearFullTicks;
   private long _lastOverflowTicks;
@@ -367,7 +371,7 @@ so that subsequent stories have a stable, source-tagged datagram stream to parse
 
 ### Task 6 — `DisposeAsync` teardown (AC: #7)
 
-- [ ] **6.1** Make dispose idempotent + cancellation-safe:
+- [x] **6.1** Make dispose idempotent + cancellation-safe:
   ```csharp
   public async ValueTask DisposeAsync()
   {
@@ -409,18 +413,18 @@ so that subsequent stories have a stable, source-tagged datagram stream to parse
       _runCts?.Dispose();
   }
   ```
-- [ ] **6.2** **Why `DropMembership` before `Close`?** Closing the socket implicitly leaves any joined groups, but doing it explicitly is the documented, well-behaved sequence (recommended by Microsoft socket docs). Some routers also notice the explicit IGMP-LEAVE and stop forwarding multicast to that adapter immediately.
-- [ ] **6.3** Bare `catch` is rare in Core (Pattern 10 — three places only). Teardown is one of those places by precedent (`DiagnosticFileSink` drain loop is another); the `Exception` filter narrows to socket-disposal races. Re-evaluate if the dev-agent finds a more typed catch fits.
-- [ ] **6.4** Tests should be able to call `DisposeAsync` twice without exception (AC-2.1.7 idempotence).
+- [x] **6.2** **Why `DropMembership` before `Close`?** Closing the socket implicitly leaves any joined groups, but doing it explicitly is the documented, well-behaved sequence (recommended by Microsoft socket docs). Some routers also notice the explicit IGMP-LEAVE and stop forwarding multicast to that adapter immediately.
+- [x] **6.3** Bare `catch` is rare in Core (Pattern 10 — three places only). Teardown is one of those places by precedent (`DiagnosticFileSink` drain loop is another); the `Exception` filter narrows to socket-disposal races. Re-evaluate if the dev-agent finds a more typed catch fits.
+- [x] **6.4** Tests should be able to call `DisposeAsync` twice without exception (AC-2.1.7 idempotence).
 
 ### Task 7 — DI registration (Pattern 7)
 
-- [ ] **7.1** Add to `src/ohSpy.App/Composition/ServiceRegistration.cs` — register as singleton:
+- [x] **7.1** Add to `src/ohSpy.App/Composition/ServiceRegistration.cs` — register as singleton:
   ```csharp
   s.AddSingleton<ISsdpTransport, SsdpTransport>();
   ```
-- [ ] **7.2** **Verify** the line is added inside the `RegisterServices` extension method, ordered alphabetically near the existing `IUpnpHttpClient` registration. Build-and-run nothing changes at the App level yet (no consumer wires the transport until Story 2.4 — `DiscoveryService`).
-- [ ] **7.3** **Don't** add the transport to `App.xaml.cs` startup — the lifecycle is owned by `AdapterScope` (Story 2.2). Registration only.
+- [x] **7.2** **Verify** the line is added inside the `RegisterServices` extension method, ordered alphabetically near the existing `IUpnpHttpClient` registration. Build-and-run nothing changes at the App level yet (no consumer wires the transport until Story 2.4 — `DiscoveryService`).
+- [x] **7.3** **Don't** add the transport to `App.xaml.cs` startup — the lifecycle is owned by `AdapterScope` (Story 2.2). Registration only.
 
 ### Task 8 — Tests: loopback integration tests (AC: #10, plus AC-2.1.1..9)
 
@@ -430,29 +434,29 @@ Carry `[Trait("category", "integration")]` (Pattern 14) AND per-test `[Trait("ac
 
 Recommended test surface:
 
-- [ ] **8.1** `Datagram_Record_HasD2Shape_AC211` — reflection over `SsdpDatagram` confirms `IPEndPoint Remote`, `byte[] Payload`, `DateTime ArrivalUtc`, `SsdpSource Source`; confirm `sealed record`.
-- [ ] **8.2** `Source_Enum_HasMulticastAndSearchResponseOnly_AC211` — assert exactly two enum values.
-- [ ] **8.3** `Interface_DeclaresStartSendIncomingDispose_AC212` — reflection over `ISsdpTransport` confirms surface + `IAsyncDisposable`.
-- [ ] **8.4** **Loopback receive test (multicast leg):** spin up a `SsdpTransport`, call `StartAsync(IPAddress.Loopback, ct)`, send a canned NOTIFY payload from a second loopback UDP socket to `239.255.255.250:1900`, read one `SsdpDatagram` from `IncomingDatagrams`. Assert `Source == Multicast`, `Remote.Address` matches the sender, `Payload` matches the canned bytes.
+- [x] **8.1** `Datagram_Record_HasD2Shape_AC211` — reflection over `SsdpDatagram` confirms `IPEndPoint Remote`, `byte[] Payload`, `DateTime ArrivalUtc`, `SsdpSource Source`; confirm `sealed record`.
+- [x] **8.2** `Source_Enum_HasMulticastAndSearchResponseOnly_AC211` — assert exactly two enum values.
+- [x] **8.3** `Interface_DeclaresStartSendIncomingDispose_AC212` — reflection over `ISsdpTransport` confirms surface + `IAsyncDisposable`.
+- [x] **8.4** **Loopback receive test (multicast leg):** spin up a `SsdpTransport`, call `StartAsync(IPAddress.Loopback, ct)`, send a canned NOTIFY payload from a second loopback UDP socket to `239.255.255.250:1900`, read one `SsdpDatagram` from `IncomingDatagrams`. Assert `Source == Multicast`, `Remote.Address` matches the sender, `Payload` matches the canned bytes.
 
   **Loopback caveat for the dev agent:** joining the SSDP multicast group on `127.0.0.1` requires the loopback interface to support multicast. **This is OS-dependent and CAN flake on Windows hosts that haven't been configured for loopback multicast.** Recommended alternatives if loopback multicast doesn't deliver:
     1. Use `IPAddress.Loopback` for the bind but send to the multicast group via a sender bound to `IPAddress.Any` with the `MulticastInterface` set to loopback.
     2. **Fallback:** bind both transport AND sender to a real adapter address from `NetworkInterface.GetAllNetworkInterfaces()` filtered to up + IPv4 + non-loopback. This is more realistic but introduces machine-dependence (Linn dev machines all have a real adapter; CI doesn't exist per Decision 12, so this is OK).
     3. **If both fail on the dev agent's machine:** document the flake in Completion Notes + tag the test `[Trait("category", "integration")]` (already done) + add a `[Fact(Skip = "loopback multicast not available — see Completion Notes")]` placeholder. **Don't ship a broken test — surface the limitation honestly.**
-- [ ] **8.5** **Loopback receive test (search-response leg):** call `SendMSearchAsync(TimeSpan.FromSeconds(1), ct)`, have a second loopback UDP socket bound to `IPAddress.Loopback:1900` listen for the M-SEARCH (the second socket is acting as a fake device). Read the payload; assert it contains `ST: upnp:rootdevice`, `MAN: "ssdp:discover"` (quoted), `MX: 1`, `HOST: 239.255.255.250:1900`. **This test does not require multicast delivery — the second socket can be bound to receive from `239.255.255.250` OR (simpler) the test can read the search-socket's send by other means.** The simplest assertion is "we constructed and sent a payload with the right shape" — capture the payload via `BuildMSearchPayload` exposed as `internal static` and unit-tested directly.
-- [ ] **8.6** **M-SEARCH payload unit test (no sockets):** make `BuildMSearchPayload` `internal static` (Core grants `InternalsVisibleTo("ohSpy.Core.Tests")` already from Story 1.3), test the byte exactness for a known MX value. This is the strongest AC-2.1.6 assertion — much more reliable than a socket-level test, and the bytes are exactly what we put on the wire.
-- [ ] **8.7** **Diagnostic-emission test for `SocketException` path (AC-2.1.8):** induce a `SocketException` by closing the socket mid-receive (the canonical pattern: start transport, dispose `_multicastSocket` via reflection or test hook, observe a Warning with `DiagCategories.SsdpParse`). **Pragmatic substitute** if internal-socket disposal proves brittle: hand the receive loop a deliberately broken socket (impl note: leave room for a test-hook seam if the dev-agent finds this is the cleanest path — but don't over-engineer; if the integration test above naturally triggers the path during teardown, that's sufficient).
-- [ ] **8.8** **`DisposeAsync` idempotence test (AC-2.1.7):** call `DisposeAsync` twice on a started transport; second call returns without throwing; `IncomingDatagrams.Completion` is completed.
-- [ ] **8.9** **Cancellation-from-caller test (AC-2.1.9):** start transport with a CTS, cancel the CTS without calling `DisposeAsync`, await ≤ 500 ms — assert both `_multicastLoop` and `_searchLoop` are completed (Faulted or Canceled both acceptable; Faulted via swallowed `OperationCanceledException` is what the spec's loop body produces).
-- [ ] **8.10** Use `CapturingDiagnosticEmitter` (Story 1.3 fake, `tests/ohSpy.Core.Tests/Fakes/CapturingDiagnosticEmitter.cs`) for emission assertions.
+- [x] **8.5** **Loopback receive test (search-response leg):** call `SendMSearchAsync(TimeSpan.FromSeconds(1), ct)`, have a second loopback UDP socket bound to `IPAddress.Loopback:1900` listen for the M-SEARCH (the second socket is acting as a fake device). Read the payload; assert it contains `ST: upnp:rootdevice`, `MAN: "ssdp:discover"` (quoted), `MX: 1`, `HOST: 239.255.255.250:1900`. **This test does not require multicast delivery — the second socket can be bound to receive from `239.255.255.250` OR (simpler) the test can read the search-socket's send by other means.** The simplest assertion is "we constructed and sent a payload with the right shape" — capture the payload via `BuildMSearchPayload` exposed as `internal static` and unit-tested directly.
+- [x] **8.6** **M-SEARCH payload unit test (no sockets):** make `BuildMSearchPayload` `internal static` (Core grants `InternalsVisibleTo("ohSpy.Core.Tests")` already from Story 1.3), test the byte exactness for a known MX value. This is the strongest AC-2.1.6 assertion — much more reliable than a socket-level test, and the bytes are exactly what we put on the wire.
+- [x] **8.7** **Diagnostic-emission test for `SocketException` path (AC-2.1.8):** induce a `SocketException` by closing the socket mid-receive (the canonical pattern: start transport, dispose `_multicastSocket` via reflection or test hook, observe a Warning with `DiagCategories.SsdpParse`). **Pragmatic substitute** if internal-socket disposal proves brittle: hand the receive loop a deliberately broken socket (impl note: leave room for a test-hook seam if the dev-agent finds this is the cleanest path — but don't over-engineer; if the integration test above naturally triggers the path during teardown, that's sufficient).
+- [x] **8.8** **`DisposeAsync` idempotence test (AC-2.1.7):** call `DisposeAsync` twice on a started transport; second call returns without throwing; `IncomingDatagrams.Completion` is completed.
+- [x] **8.9** **Cancellation-from-caller test (AC-2.1.9):** start transport with a CTS, cancel the CTS without calling `DisposeAsync`, await ≤ 500 ms — assert both `_multicastLoop` and `_searchLoop` are completed (Faulted or Canceled both acceptable; Faulted via swallowed `OperationCanceledException` is what the spec's loop body produces).
+- [x] **8.10** Use `CapturingDiagnosticEmitter` (Story 1.3 fake, `tests/ohSpy.Core.Tests/Fakes/CapturingDiagnosticEmitter.cs`) for emission assertions.
 
 ### Task 9 — Final verification (AC: all)
 
-- [ ] **9.1** `dotnet build` succeeds with `0 Warning(s), 0 Error(s)` under `TreatWarningsAsErrors=true`. Expect to need explicit `using` directives for `System.Net`, `System.Net.Sockets`, `System.Threading.Channels`, `System.Threading.Tasks`, `ohSpy.Core.Models`, `ohSpy.Core.Diagnostics`.
-- [ ] **9.2** `dotnet test` reports green. Story 1.6 left 126 tests (124 passing + 2 documented skipped). Story 2.1 adds ~10 tests; target ~136.
-- [ ] **9.3** `dotnet test --filter "category=chaos"` still runs the existing 1 Story 1.6 chaos test (and passes). **Story 2.1 adds NO chaos tests** — the chaos suite stays at 1 for now. Adding chaos for SSDP malformed frames is the natural Story 2.4 (`SsdpParser`) follow-up; Murat called it out in Story 1.6 dev notes line 704–706.
-- [ ] **9.4** NetArchTest boundary tests (Story 1.6 `CoreAppBoundaryTests`) still pass — `SsdpTransport` lives in Core and references only BCL + `ohSpy.Core.Diagnostics`/`ohSpy.Core.Models` (no WinUI / WindowsAppSDK / WinRT.Interop / `ohSpy.App`).
-- [ ] **9.5** **Smoke against a real device on Simon's LAN — OPTIONAL, NOT REQUIRED for AC.** If the dev agent's machine is on Simon's UPnP-equipped network and the dev agent wants a final confidence check: write a one-off `Program.Main` (NOT committed) that wires up `SsdpTransport` to `NetworkInterface.GetAllNetworkInterfaces()` first eligible IPv4 adapter, calls `StartAsync` + `SendMSearchAsync(5s)`, reads from `IncomingDatagrams` for 10 s, prints what came back. Should see Linn DS / DLNA renderer / IGD router / etc. announcements. Document any surprises in Completion Notes. **Don't commit the smoke runner** — it's not test infrastructure.
+- [x] **9.1** `dotnet build` succeeds with `0 Warning(s), 0 Error(s)` under `TreatWarningsAsErrors=true`. Expect to need explicit `using` directives for `System.Net`, `System.Net.Sockets`, `System.Threading.Channels`, `System.Threading.Tasks`, `ohSpy.Core.Models`, `ohSpy.Core.Diagnostics`.
+- [x] **9.2** `dotnet test` reports green. Story 1.6 left 126 tests (124 passing + 2 documented skipped). Story 2.1 adds ~10 tests; target ~136.
+- [x] **9.3** `dotnet test --filter "category=chaos"` still runs the existing 1 Story 1.6 chaos test (and passes). **Story 2.1 adds NO chaos tests** — the chaos suite stays at 1 for now. Adding chaos for SSDP malformed frames is the natural Story 2.4 (`SsdpParser`) follow-up; Murat called it out in Story 1.6 dev notes line 704–706.
+- [x] **9.4** NetArchTest boundary tests (Story 1.6 `CoreAppBoundaryTests`) still pass — `SsdpTransport` lives in Core and references only BCL + `ohSpy.Core.Diagnostics`/`ohSpy.Core.Models` (no WinUI / WindowsAppSDK / WinRT.Interop / `ohSpy.App`).
+- [x] **9.5** **Smoke against a real device on Simon's LAN — OPTIONAL, NOT REQUIRED for AC.** If the dev agent's machine is on Simon's UPnP-equipped network and the dev agent wants a final confidence check: write a one-off `Program.Main` (NOT committed) that wires up `SsdpTransport` to `NetworkInterface.GetAllNetworkInterfaces()` first eligible IPv4 adapter, calls `StartAsync` + `SendMSearchAsync(5s)`, reads from `IncomingDatagrams` for 10 s, prints what came back. Should see Linn DS / DLNA renderer / IGD router / etc. announcements. Document any surprises in Completion Notes. **Don't commit the smoke runner** — it's not test infrastructure.
 
 ## Dev Notes
 
@@ -626,10 +630,106 @@ tests/ohSpy.Core.Tests/
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-opus-4-8[1m] (Claude Opus 4.8, 1M context) — bmad-dev-story workflow.
 
 ### Debug Log References
 
+Spec-skeleton compile check (epic-1 retro action A) caught **5 analyzer errors** in the as-written
+skeletons before any test ran — exactly the failure class the retro flagged. All were build-time
+analyzer rules under `TreatWarningsAsErrors=true`, none were logic bugs:
+
+1. **CA2016 ×2** — `Task.Run(() => ReceiveLoopAsync(...))` must forward the run token. Fixed by
+   passing `runToken` as the second `Task.Run` argument (so a pre-start cancellation is honoured).
+2. **VSTHRD103** — `_runCts.Cancel()` synchronously blocks in an async method. Switched to
+   `await _runCts.CancelAsync()` (mirrors `DiagnosticFileSink.DisposeAsync`).
+3. **VSTHRD003 ×2** — awaiting the background loop Tasks in `DisposeAsync` trips the "awaiting work
+   not started in this context" rule. Suppressed with a scoped `#pragma warning disable VSTHRD003`,
+   the same pattern `DiagnosticFileSink` already uses for its pump-task join.
+
+Test-side analyzer fixes: **VSTHRD103** (`broken.Connect` → `await broken.ConnectAsync`), **CA1859**
+(`ReadUntilAsync` parameter typed to concrete `SsdpTransport`, not the interface).
+
+**One real test-design defect caught by running (epic-1 retro action B — "trivially passing is a red
+flag"):** the first receive test delivered the datagram by **unicast** to `(adapter, 1900)` and timed
+out. Root cause: Windows `SSDPSRV` co-holds `*:1900` via `ReuseAddress`, and Windows delivers a
+**unicast** datagram to only **one** of the reuse-bound sockets — it picked SSDPSRV, not ours.
+Multicast is delivered to **all** group members, which is why the M-SEARCH self-receive test passed.
+Fix: deliver the receive-test datagram via the **multicast group** (with a unique USN marker +
+read-until-match so live-network NOTIFYs on a real adapter don't confuse the assertion). This is a
+genuine UDP-on-Windows lesson, documented as **A22** below.
+
 ### Completion Notes List
 
+**All 10 ACs satisfied; 16 new tests (124 → 140 passing, +2 pre-existing skips = 142 total).**
+
+- **Loopback multicast works on this dev box.** `ResolveTestAdapter()` prefers `IPAddress.Loopback`
+  and the probe (`CanBindAndJoin`) confirmed the SSDP multicast join succeeds on loopback here, so
+  tests ran deterministically on 127.0.0.1 (123–195 ms, stable across 3 repeat runs — no flake). The
+  feared "loopback multicast doesn't deliver on Windows" (story 8.4 / speculative **A20**) did **not**
+  materialise; the helper still falls back to the first up IPv4 non-loopback adapter if a future
+  machine rejects the loopback join, so the suite is portable without code change.
+- **AC-2.1.8 SocketException path** is exercised with a *genuine* `SocketException`, not a mock:
+  a connected UDP socket that sent to a dead local port yields `WSAECONNRESET` on the next receive
+  (Windows `SIO_UDP_CONNRESET` default). The loop emits the `Ssdp.Parse` Warning, backs off, and
+  continues — proving NFR-R1. A `RunReceiveLoopForTestAsync` internal seam injects the faulted socket.
+- **AC-2.1.5 overflow signal is approximate by necessity** (as the story foresaw): `DropOldest` raises
+  no drop event, so overflow is inferred from `Reader.Count == capacity` immediately after a
+  successful `TryWrite`. Telemetry is rate-limited to **1 Hz** per category via `Interlocked` stamps
+  (invented cadence — speculative **A21** still stands as a tune-if-needed candidate; no real device
+  traffic has stressed it yet).
+- **Message-grammar deviation (minor):** Pattern 12 says "ASCII only", but the story's example
+  overflow message used an em-dash (`—`, non-ASCII). I used an ASCII hyphen:
+  `"ssdp channel overflow - oldest dropped"`. Honours Pattern 12 literally; flag if a different
+  wording is preferred.
+- **MulticastInterface via `adapterIPv4.GetAddressBytes()` (address-bytes form) behaved exactly as D2
+  assumed** — M-SEARCH egressed on the chosen adapter and looped back to our own joined listener.
+  Speculative **A19** (wrong API shape) did **not** materialise; no amendment needed there.
+- **No new packages, no new DiagCategories, no csproj edits** — `System.Net.Sockets` /
+  `System.Threading.Channels` are BCL; `Ssdp.Parse` / `Ssdp.Channel.NearFull` / `Ssdp.Channel.Overflow`
+  pre-existed; `InternalsVisibleTo` already grants Tests + App access. App touch is the single DI line.
+
+**Amendment candidate raised for architect review:**
+
+- **A22 (new, confirmed — not speculative):** SSDP transport **integration tests must deliver test
+  datagrams via the multicast group, never by unicast to `(adapter, 1900)`.** On Windows, `SSDPSRV`
+  co-binds `*:1900` with `ReuseAddress`; a unicast datagram is delivered to only one reuse-bound
+  socket and Windows may hand it to `SSDPSRV` instead of the transport. Multicast is fanned out to all
+  group members. Recommend amending D2's test-contract prose to state this as the canonical SSDP test
+  delivery method.
+
 ### File List
+
+**New (5):**
+
+- `src/ohSpy.Core/Models/SsdpSource.cs`
+- `src/ohSpy.Core/Models/SsdpDatagram.cs`
+- `src/ohSpy.Core/Discovery/ISsdpTransport.cs`
+- `src/ohSpy.Core/Discovery/SsdpTransport.cs`
+- `tests/ohSpy.Core.Tests/Discovery/SsdpTransportTests.cs`
+
+**Modified (3):**
+
+- `src/ohSpy.App/Composition/ServiceRegistration.cs` — added `AddSingleton<ISsdpTransport, SsdpTransport>()` + `using ohSpy.Core.Discovery;`
+- `_bmad-output/implementation-artifacts/2-1-ssdp-transport-multicast-search-sockets-with-bounded-channel.md` — frontmatter `baseline_commit`, task checkboxes, Dev Agent Record, Status
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — `2-1` status ready-for-dev → in-progress → review
+
+## Senior Developer Review (AI)
+
+**Review Date:** 2026-06-02
+**Reviewer Model:** Claude Sonnet 4.6 (bmad-code-review, three-layer parallel)
+**Outcome:** Changes Requested
+
+### Action Items
+
+- [x] [Review][Patch] `search` socket leaked on partial `StartAsync` failure [`src/ohSpy.Core/Discovery/SsdpTransport.cs` lines 77–83]
+- [x] [Review][Patch] Overflow telemetry reads count post-write; cannot detect actual drops [`src/ohSpy.Core/Discovery/SsdpTransport.cs` — `EmitChannelFillTelemetry`]
+- [x] [Review][Patch] No test coverage for AC-2.1.5 (channel options + near-full/overflow telemetry) [`tests/ohSpy.Core.Tests/Discovery/SsdpTransportTests.cs`]
+- [x] [Review][Patch] No integration test for search-response socket receive path + `SearchResponse` tag [`tests/ohSpy.Core.Tests/Discovery/SsdpTransportTests.cs`]
+- [x] [Review][Patch] `FindUnusedUdpPort` TOCTOU makes AC-2.1.8 `SocketException` test unreliable [`tests/ohSpy.Core.Tests/Discovery/SsdpTransportTests.cs` lines 395–401]
+- [x] [Review][Defer] `StartAsync`/`DisposeAsync` concurrent-call race (no per-instance lifecycle lock) — deferred, by-design: `AdapterScope` (Story 2.2) owns call sequencing; transport contract does not require thread-safe concurrent lifecycle calls
+
+## Change Log
+
+| Date | Change |
+|---|---|
+| 2026-06-02 | Implemented Story 2.1 SSDP transport: `SsdpDatagram`/`SsdpSource` models, `ISsdpTransport`, `SsdpTransport` (two-socket multicast + ephemeral search, `DropOldest(4096)` bounded channel, M-SEARCH, rate-limited near-full/overflow telemetry, idempotent `DisposeAsync`), DI registration, 16 integration tests. Build 0 warnings; 140 passing + 2 skipped; chaos suite unchanged at 1. Amendment **A22** raised (multicast-only test delivery on Windows). Status → review. |

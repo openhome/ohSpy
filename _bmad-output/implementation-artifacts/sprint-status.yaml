@@ -37,6 +37,9 @@
 
 generated: 2026-06-01
 last_updated: 2026-06-02
+# 2026-06-02: Story 2.1 moved review → done by Sonnet code-review (bmad-code-review). APPROVED-WITH-MINOR-FIXES. 5 patches applied: search-socket leak, overflow telemetry pre-write, AC-2.1.5 tests, AC-2.1.4 search-response test, TOCTOU fix.
+# 2026-06-02: Story 2.1 moved in-progress → review by dev-story workflow (claude-opus-4-8[1m]). 16 tests, build 0 warnings. A22 amendment candidate raised.
+# 2026-06-02: Story 2.1 moved ready-for-dev → in-progress by dev-story workflow (claude-opus-4-8[1m]).
 # 2026-06-02: Story 2.1 context created via bmad-create-story; Epic 2 opens (backlog → in-progress); 2-1 backlog → ready-for-dev.
 # 2026-06-02: Story 1.6 moved review → done by Sonnet code-review (bmad-code-review). APPROVED-WITH-MINOR-FIXES.
 # 2026-06-02: Story 1.5 moved ready-for-dev → in-progress → review by dev-story workflow (claude-opus-4-7[1m]).
@@ -76,7 +79,7 @@ development_status:
 
   # Epic 2 — Device Discovery & Tree Browsing
   epic-2: in-progress
-  2-1-ssdp-transport-multicast-search-sockets-with-bounded-channel: ready-for-dev
+  2-1-ssdp-transport-multicast-search-sockets-with-bounded-channel: done
   2-2-network-adapter-enumerator-adapter-scope-startup-bind: backlog
   2-3-device-registry-descriptionfetchstate-machine-eager-description-dispatcher: backlog
   2-4-ssdp-parser-discoveryservice-wire-transport-into-registry: backlog
