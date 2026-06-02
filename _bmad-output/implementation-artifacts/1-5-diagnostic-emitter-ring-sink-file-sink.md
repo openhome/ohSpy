@@ -4,7 +4,7 @@ baseline_commit: a3816066602cde6354f5c07f28515967f488d004
 
 # Story 1.5: Diagnostic Emitter, Ring Sink, File Sink
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -1148,4 +1148,5 @@ claude-opus-4-7[1m] via `bmad-dev-story` workflow (2026-06-02).
 
 ## Change Log
 
+- **2026-06-02 (claude-sonnet-4-6 via `bmad-code-review`):** Story 1.5 reviewed. Verdict: APPROVED-WITH-MINOR-FIXES. All 8 ACs pass. Four documented deviations accepted; A14 amendment candidate confirmed (DiagnosticFileSink belongs in Core). Minor findings: (1) FlushAsync timeout race — pump still running when _currentFile disposed; ObjectDisposedException swallowed, acceptable; (2) _ringSink not volatile — TCS ordering provides adequate guarantee but volatile annotation would be safer; (3) DiagnosticOptions.MinSeverity uses init not set — A15 deferred to Story 5.1 per commit notes. 116/116 tests pass. Status: review → done.
 - **2026-06-02 (claude-opus-4-7[1m] via `bmad-dev-story`):** Story 1.5 implemented. 15 created + 7 modified + 1 deleted file. Build clean (0 warnings, 0 errors). Tests 116/116 (84 baseline + 32 new). One A14 amendment candidate surfaced (DiagnosticFileSink belongs in Core, not App — TFM compatibility friction). One spec correction applied in-line (RotateToTodayAsync infinite-loop fix via sequenced-rename helper). One spec correction applied in-line (`PruneOldFiles` retention off-by-one — keep MaxRetainedFiles - 1 because the immediate next step opens a new active file). Status flipped ready-for-dev → in-progress → review. Working tree left dirty per Story 1.2/1.3/1.4 precedent — user to commit + launch `bmad-code-review` in a fresh Sonnet context.
