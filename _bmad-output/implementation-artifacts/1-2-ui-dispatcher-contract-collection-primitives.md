@@ -4,7 +4,7 @@ baseline_commit: a55c30d42182f5626e53fe426718691ee08c2828
 
 # Story 1.2: UI Dispatcher Contract & Collection Primitives
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -705,3 +705,4 @@ claude-opus-4-7[1m] (Anthropic Claude Opus 4.7, 1M context) — via bmad-dev-sto
 ## Change Log
 
 - **2026-06-02** — Implementation by dev-story workflow (claude-opus-4-7[1m]). `IUiDispatcher` contract + `BoundedObservableCollection<T>` + `IdentityKeyedSortedCollection<TIdentity, TItem>` + `WinUiDispatcher` impl + `ServiceRegistration` DI root + `App.xaml.cs` wiring + `InlineUiDispatcher` test fake + 25 unit tests. Build clean, all tests pass, App still launches. Status: ready-for-dev → in-progress → review.
+- **2026-06-02** — Code review by Sonnet (fresh context, independent of implementing Opus session). Verdict: APPROVED. All 7 ACs verified. Ring-buffer eviction, reindex slice, `RunContinuationsAsynchronously`, Pattern 2 boundary, singleton lifetime, and DI thread-ordering all confirmed correct. Three documented deviations accepted. Two open non-blocking follow-ups noted. Status: review → done.

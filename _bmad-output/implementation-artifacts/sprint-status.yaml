@@ -41,6 +41,7 @@ last_updated: 2026-06-02
 # 2026-06-01: Story 1.1 moved review → done by Sonnet code-review (bmad-code-review).
 # 2026-06-02: Story 1.2 context created via bmad-create-story; backlog → ready-for-dev.
 # 2026-06-02: Story 1.2 moved ready-for-dev → in-progress → review by dev-story workflow (claude-opus-4-7[1m]).
+# 2026-06-02: Story 1.2 moved review → done by Sonnet code-review (bmad-code-review). APPROVED.
 project: ohSpy
 project_key: NOKEY
 tracking_system: file-system
@@ -50,7 +51,7 @@ development_status:
   # Epic 1 — Project Foundation & Test Infrastructure
   epic-1: in-progress
   1-1-project-scaffold-build-test-installer-pipeline: done
-  1-2-ui-dispatcher-contract-collection-primitives: review
+  1-2-ui-dispatcher-contract-collection-primitives: done
   1-3-upnp-http-client-facade-with-per-request-timeout-discipline: backlog
   1-4-xml-parsers-scpd-streaming-device-description-with-xxe-defence: backlog
   1-5-diagnostic-emitter-ring-sink-file-sink: backlog
