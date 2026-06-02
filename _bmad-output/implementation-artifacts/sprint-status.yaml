@@ -37,6 +37,10 @@
 
 generated: 2026-06-01
 last_updated: 2026-06-02
+# 2026-06-02: Story 2.3 moved review → done by Sonnet code-review (bmad-code-review). APPROVED-WITH-MINOR-FIXES. 2 patches: DeviceCts.Dispose() in RemoveCore + DeviceToken snapshotted at construction; MarkInFlight Post guarded against cancelled token.
+# 2026-06-02: Story 2.3 moved in-progress → review by dev-story workflow (claude-opus-4-8[1m]). 36 tests (165→199 passing, +2 skips), build 0 warnings, chaos suite unchanged at 1, DI graph cycle-free. Also fixed a pre-existing flaky allocation test (process-wide → thread-local GC). A27/A28 (D9 stale snippets) + A29 (allocation-test robustness) amendment candidates raised.
+# 2026-06-02: Story 2.3 moved ready-for-dev → in-progress by dev-story workflow (claude-opus-4-8[1m]).
+# 2026-06-02: Story 2.3 context created via bmad-create-story (claude-opus-4-8[1m]); backlog → ready-for-dev. Device registry + DescriptionFetchState machine + EagerDescriptionDispatcher. Key design notes: registry backing store MUST be ConcurrentDictionary (identity-lookup reads off the emitting thread per DiagnosticRingSink.Push); DeviceRegistry must NOT depend on IDiagnosticEmitter (DI cycle); registry↔dispatcher cycle broken via internal EntryNeedsFetch event; DeviceDescription.Udn is a string ("uuid:<guid>") not Guid RootUdn → UdnMatches normalisation. A27/A28 amendment candidates raised (D9 stale snippets).
 # 2026-06-02: Story 2.2 moved review → done by Sonnet code-review (bmad-code-review). APPROVED-WITH-MINOR-FIXES. 5 patches applied: StartAdapterScopeAsync wrapper, D7 shutdown ordering, volatile _transportStarted, CurrentAdapterIPv4 post-bind, FakeSsdpTransport.TeardownCts.
 # 2026-06-02: Story 2.2 moved in-progress → review by dev-story workflow (claude-opus-4-8[1m]). 19 tests (144→163 passing, +2 skips), build 0 warnings, chaos suite unchanged at 1. A26 amendment candidate raised (App-level disposable ownership / CA1001); A23 restated as 5.2 prerequisite (transport factory).
 # 2026-06-02: Story 2.2 moved ready-for-dev → in-progress by dev-story workflow (claude-opus-4-8[1m]).
@@ -85,7 +89,7 @@ development_status:
   epic-2: in-progress
   2-1-ssdp-transport-multicast-search-sockets-with-bounded-channel: done
   2-2-network-adapter-enumerator-adapter-scope-startup-bind: done
-  2-3-device-registry-descriptionfetchstate-machine-eager-description-dispatcher: backlog
+  2-3-device-registry-descriptionfetchstate-machine-eager-description-dispatcher: done
   2-4-ssdp-parser-discoveryservice-wire-transport-into-registry: backlog
   2-5-main-window-shell-device-tree-top-level-rows: backlog
   2-6-service-action-expansion-lazy-scpd-incremental: backlog

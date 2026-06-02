@@ -82,7 +82,11 @@ public class DiagnosticEmitterTests
         GC.Collect();
 
         const int iterations = 100_000;
-        var before = GC.GetTotalAllocatedBytes(precise: true);
+        // Thread-local measurement (NOT GC.GetTotalAllocatedBytes, which is process-wide):
+        // xUnit runs test classes in parallel, so a process-wide counter folds in
+        // allocations from concurrently-running tests on other threads and makes this
+        // assertion flaky. GetAllocatedBytesForCurrentThread isolates this loop's thread.
+        var before = GC.GetAllocatedBytesForCurrentThread();
 
         for (int i = 0; i < iterations; i++)
         {
@@ -92,7 +96,7 @@ public class DiagnosticEmitterTests
             emitter.Verbose("category", "message");
         }
 
-        var after = GC.GetTotalAllocatedBytes(precise: true);
+        var after = GC.GetAllocatedBytesForCurrentThread();
         var delta = after - before;
         var bytesPerCall = (double)delta / iterations;
 

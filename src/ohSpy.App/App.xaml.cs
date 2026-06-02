@@ -12,6 +12,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using Microsoft.UI.Xaml.Shapes;
 using ohSpy.App.Composition;
+using ohSpy.Core.Devices;
 using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Discovery;
 using ohSpy.Core.Threading;
@@ -88,6 +89,11 @@ public partial class App : Application
         // future refactor breaks the order.
         Services.GetRequiredService<DiagnosticFileSink>().SetRingSink(
             Services.GetRequiredService<IDiagnosticRingSink>());
+
+        // Story 2.3: construct the eager-description dispatcher so it subscribes to the
+        // registry's fetch-trigger before any SSDP alive is processed (DiscoveryService
+        // wiring lands in 2.4). Also validates the full DI graph resolves with no cycle.
+        _ = Services.GetRequiredService<EagerDescriptionDispatcher>();
 
         // Story 2.2: construct the adapter scope (Decision 7 adapter level) and bind the
         // SSDP transport to the launch-default adapter (FR-048 + FR-004). Interim home —
