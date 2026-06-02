@@ -70,7 +70,7 @@ development_status:
   1-4-xml-parsers-scpd-streaming-device-description-with-xxe-defence: done
   1-5-diagnostic-emitter-ring-sink-file-sink: done
   1-6-fakeupnpdevice-minimal-modes-first-chaos-test-netarchtest-rules: done
-  epic-1-retrospective: optional
+  epic-1-retrospective: done
 
   # Epic 2 — Device Discovery & Tree Browsing
   epic-2: backlog
