@@ -2059,8 +2059,6 @@ ohSpy/
 │   │   ├── Windowing/
 │   │   │   ├── WinUiDispatcher.cs         # IUiDispatcher impl (Decision 1)
 │   │   │   └── WindowOwnershipManager.cs  # IWindowOwnershipManager impl (Decision 10)
-│   │   ├── Diagnostics/
-│   │   │   └── DiagnosticFileSink.cs      # IDiagnosticFileSink impl — App-side because %LOCALAPPDATA% (Decision 8)
 │   │   ├── Views/
 │   │   │   ├── InvocationPopupWindow.xaml + .cs        # FR-025
 │   │   │   ├── SubscriptionPopupWindow.xaml + .cs      # FR-032
@@ -2088,7 +2086,7 @@ ohSpy/
 │       │   ├── DiagnosticOptions.cs
 │       │   ├── IDiagnosticEmitter.cs / DiagnosticEmitter.cs
 │       │   ├── IDiagnosticRingSink.cs / DiagnosticRingSink.cs
-│       │   ├── IDiagnosticFileSink.cs                  # interface only — impl lives in App
+│       │   ├── IDiagnosticFileSink.cs / DiagnosticFileSink.cs   # Patched A14: impl lives in Core
 │       │   └── DiagnosticRow.cs                        # resolved Identity / Endpoint (FR-041)
 │       ├── Discovery/
 │       │   ├── ISsdpTransport.cs / SsdpTransport.cs    # Decision 2
@@ -2188,7 +2186,7 @@ ohSpy/
 | **4.9 Action invocation** (FR-025..031, 102, 103) | `Views/InvocationPopupWindow.xaml`, `ViewModels/InvocationPopupViewModel.cs`, `ViewModels/ArgumentInputViewModel.cs`, `Soap/SoapEnvelopeBuilder.cs`, `Http/UpnpHttpClient.InvokeActionAsync` |
 | **4.10 GENA subscription** (FR-032..038, 104) | `Views/SubscriptionPopupWindow.xaml`, `ViewModels/SubscriptionPopupViewModel.cs`, `Events/SubscriptionClient.cs`, `Events/EventCallbackHost.cs`, `Events/HttpRequestParser.cs` |
 | **4.11 Adapter selection** (FR-048..050) | `ViewModels/ShellViewModel.AdapterSelectionCommand`, `Discovery/NetworkAdapterEnumerator.cs`, atomic-rebind sequence in `ShellViewModel.SwitchAdapterAsync` |
-| **4.12 Diagnostics** (FR-039..042) | `Diagnostics/IDiagnosticEmitter.cs`, `Diagnostics/DiagnosticRingSink.cs`, `App/Diagnostics/DiagnosticFileSink.cs`, `Views/DiagnosticsWindow.xaml`, `ViewModels/DiagnosticsViewModel.cs` |
+| **4.12 Diagnostics** (FR-039..042) | `Diagnostics/IDiagnosticEmitter.cs`, `Diagnostics/DiagnosticRingSink.cs`, `Diagnostics/DiagnosticFileSink.cs` (Core; Patched A14), `Views/DiagnosticsWindow.xaml`, `ViewModels/DiagnosticsViewModel.cs` |
 | **4.13 Secondary window lifecycle** (FR-037, 046) | `Windowing/WindowOwnershipManager.cs`, popup VM disposal patterns, registry `DeviceRemoved` handling per popup VM |
 
 ### Architectural Boundaries
@@ -2746,6 +2744,30 @@ The architectural reasoning is identical to D5's rationale: separate network fet
 Mechanical only — no code or pattern changes required.
 
 **Implementation evidence:** `.editorconfig` test-tree block as of commit `8a6fb44`.
+
+---
+
+### Amendment A14 — `DiagnosticFileSink` location (Decision 8 refinement)
+
+**Source:** Story 1.5 (`1-5-diagnostic-emitter-ring-sink-file-sink`) implementation; confirmed by the Sonnet code-review of commit `155601b` (2026-06-02).
+
+**Issue.** Decision 8's project-structure tree placed `DiagnosticFileSink` in `src/ohSpy.App/Diagnostics/` with the rationale "App-side because `%LOCALAPPDATA%`". That rationale is incorrect: `Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)` is plain BCL — it has no Windows-only dependency, no WinUI dependency, nothing that would force the type into the `App` assembly. The same is true for every other type the file sink uses: `System.IO.FileStream`, `System.Threading.Channels.Channel<T>`, `System.Text.Json.JsonSerializer`, `Microsoft.Extensions.Logging.ILogger<T>` — all BCL or Microsoft.Extensions.* multi-platform packages.
+
+The mis-placement caused real friction during Story 1.5 implementation:
+
+1. **TFM mismatch.** `ohSpy.App` targets `net10.0-windows10.0.19041.0`; `ohSpy.Core.Tests` targets `net10.0`. NU1201 blocks the test project from referencing the App. Testing `DiagnosticFileSink` from the test project required cross-assembly InternalsVisibleTo gymnastics that wouldn't compile.
+2. **Spurious `InternalsVisibleTo` grant.** The spec's Task 14.6 required adding `<InternalsVisibleTo Include="ohSpy.Core.Tests" />` to `ohSpy.App.csproj` so tests could reach the file sink's internal test-only ctor. With the type in Core, the existing Core-side InternalsVisibleTo grant (from Story 1.3) is enough — no new App-side grant needed.
+3. **Cleaner Core ↔ App boundary.** Pattern 2 says App holds WinUI / Windows-App-SDK / P/Invoke surface; Core holds everything else. The file sink uses none of those, so Core is the right home. App is now reduced to its proper role for diagnostics: just the DI registration (`services.AddSingleton<IDiagnosticFileSink, DiagnosticFileSink>()`) plus the `SetRingSink` late-bind in `App.xaml.cs`.
+
+**Correction.**
+
+`DiagnosticFileSink` lives in `src/ohSpy.Core/Diagnostics/DiagnosticFileSink.cs`. The project structure tree (above), the §FR mapping table (above), and any other references in Decision 8 that placed it App-side are corrected to Core-side.
+
+**Applied to:**
+- §Project Structure: `src/ohSpy.App/Diagnostics/` folder removed (it never existed in shipped code post-Story-1.5); Core's `Diagnostics/` tree updated to show `DiagnosticFileSink.cs` as an impl, not just an interface.
+- §FR mapping table (4.12 Diagnostics): `App/Diagnostics/DiagnosticFileSink.cs` → `Diagnostics/DiagnosticFileSink.cs (Core)`.
+
+**Implementation evidence:** `src/ohSpy.Core/Diagnostics/DiagnosticFileSink.cs` in commit `155601b`. Test project (`ohSpy.Core.Tests`) reaches the internal test-only ctor via Story 1.3's existing `InternalsVisibleTo("ohSpy.Core.Tests")` on `ohSpy.Core.csproj` — no new csproj edit was required, and the App-side grant the spec mandated was never added (Story 1.5 commit message documents this as deviation #1).
 
 ---
 
