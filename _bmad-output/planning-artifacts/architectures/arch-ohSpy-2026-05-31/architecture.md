@@ -2855,6 +2855,47 @@ The M-SEARCH self-receive test worked because M-SEARCH is multicast; the failing
 
 ---
 
+### Amendment A23 — `ISsdpTransport` must become a per-`AdapterScope` factory for the FR-050 switch (Decision 2 + Decision 7 refinement)
+
+**Source:** Story 2.2 (`2-2-network-adapter-enumerator-adapter-scope-startup-bind`) implementation + Sonnet code-review (2026-06-02). Raised as a candidate in Story 2.1's Dev Notes; **confirmed as a hard prerequisite for Story 5.2** during Story 2.2.
+
+**Issue.** D2 says a fresh transport is constructed per adapter on switch (line 249); Decision 7's atomic-switch sequence step 8 says "construct new `AdapterScope` on new adapter IPv4". But Story 2.1 registered `ISsdpTransport` as a **DI singleton**, and Story 2.2's `AdapterScope` consumes that singleton. A singleton, once `DisposeAsync`'d, cannot be rebound to a new adapter — `SsdpTransport.StartAsync` guards against double-start and its sockets/fields are not reset on dispose. So the current wiring supports exactly ONE adapter bind for the process lifetime.
+
+**Why this is fine for v1 through Story 2.4.** There is exactly one `AdapterScope` (constructed at startup), and no adapter switch exists until Story 5.2. The singleton is started once and disposed once at app exit. Stories 2.2–2.4 never switch adapters, so the singleton is correct and minimal for them.
+
+**Correction (deferred to Story 5.2, pinned here so it isn't rediscovered).** When Story 5.2 implements the FR-050 atomic switch, `ISsdpTransport` MUST migrate from a DI singleton to a per-scope factory:
+
+> Register `Func<ISsdpTransport>` (transient construction) instead of `AddSingleton<ISsdpTransport, SsdpTransport>()`. Each `AdapterScope` constructs and OWNS its own transport via the factory, disposing it on scope teardown. The switch sequence then constructs a fresh `AdapterScope` (Decision 7 step 8) which gets a fresh transport.
+
+**Reconciliation with Story 2.4 (`DiscoveryService`).** `DiscoveryService` consumes `ISsdpTransport.IncomingDatagrams` and MUST read the **same** instance the active `AdapterScope` started — not a second DI-resolved instance. The factory migration therefore requires `AdapterScope` to **own and expose** its transport (or the transport's `ChannelReader`) so `DiscoveryService` is wired to the scope-owned instance, not to DI directly. Story 2.4's create-story must surface this ownership question; whichever shape 2.4 picks for the transport↔DiscoveryService wiring constrains the 5.2 factory design.
+
+**Applied to:** No code change in Story 2.2 (singleton retained). Story 5.2's create-story + Story 2.4's create-story must both carry this amendment in their Dev Notes. D2's "adapter switch (FR-050)" prose and Decision 7 step 8 are the authoritative source; this amendment records the singleton→factory migration as the concrete mechanism.
+
+**Why this surfaced at Story 2.2, not 2.1:** Story 2.1 only registered the transport type; it had no consumer and no scope. Story 2.2 is the first story to own the transport lifecycle via `AdapterScope`, which made the singleton-vs-per-adapter tension concrete.
+
+---
+
+### Amendment A26 — App-level disposable-ownership pattern (Pattern 7 + Pattern 6 refinement)
+
+**Source:** Story 2.2 (`2-2-network-adapter-enumerator-adapter-scope-startup-bind`) implementation + Sonnet code-review (2026-06-02).
+
+**Issue.** Decision 7 places the app-level `_appCts` (`CancellationTokenSource`, `IDisposable`) in `App`, and Story 2.2 adds the app-owned `_adapterScope` (`IAsyncDisposable`). A type owning `IDisposable`/`IAsyncDisposable` fields trips analyzer **CA1001** ("types that own disposable fields should be disposable") under `TreatWarningsAsErrors=true`. The naive fix — `App : IDisposable` — does not work: WinUI's `Application` base exposes no `IDisposable` contract the framework invokes, so `Dispose()` would never be called; and `_adapterScope` is `IAsyncDisposable`, so a synchronous `Dispose()` would have to block on async teardown, violating Pattern 6 (no `.Wait()`/`.GetAwaiter().GetResult()`).
+
+**Decision (the canonical App-lifetime-disposable pattern).** App-lifetime disposables owned by the WinUI `App` are torn down deterministically in the `Window.Closed` handler, NOT via `IDisposable`:
+
+1. Hold them as `private readonly`/nullable fields on `App`.
+2. Apply a justified type-level `[SuppressMessage("Microsoft.Design", "CA1001", Justification = "...")]` explaining the WinUI-no-IDisposable + async-disposable reasons.
+3. Subscribe a **synchronous** `void OnWindowClosed(object, WindowEventArgs)` handler (the `Window.Closed` delegate returns void) that fire-and-forgets an `async Task ShutdownAsync()` via `_ = ShutdownAsync()` — this avoids `async void` (VSTHRD100, which is App-tree-fatal; exempt only in `tests/**` per A11).
+4. In `ShutdownAsync`, **cancel the app token first** (`await _appCts.CancelAsync()`), THEN `await scope.DisposeAsync()`, THEN `_appCts.Dispose()` — Decision 7 ordering: the parent cancellation propagates through all linked child scopes before teardown begins, so components holding `_appCts.Token` directly (future `DiscoveryService`, GENA) observe cancellation promptly rather than after the child's teardown budget elapses.
+
+**Fire-and-forget exception discipline.** Any `App`-level fire-and-forget (`_ = StartAdapterScopeAsync(...)`, `_ = ShutdownAsync()`) MUST wrap its body in `try/catch (Exception ex) when (ex is not OutOfMemoryException)` and emit a diagnostic — an unobserved exception on a discarded `Task` is silently swallowed by the .NET unobserved-task path and would mask a real startup/teardown failure (e.g. `SocketException` from transport bind). Story 2.2's `StartAdapterScopeAsync` is the reference implementation.
+
+**Applied to:** `src/ohSpy.App/App.xaml.cs` (Story 2.2). Stories 2.5 (relocates `AdapterScope` construction into `ShellViewModel`) and 5.2 (adds switch-time app-lifetime state) inherit this pattern; their create-story Dev Notes should reference A26. When `AdapterScope` moves into `ShellViewModel` (a Core type) in 2.5, the `_appCts` ownership stays in `App` (Decision 7) and the token is passed down — only the scope *construction site* moves.
+
+**Why this surfaced at Story 2.2:** Story 2.2 is the first story to give `App` ownership of long-lived disposables. Every prior disposable (HTTP client, diagnostic sinks, transport) lived in DI, where the container owns disposal — so CA1001 never fired on `App` before.
+
+---
+
 ### Decision 13 — Pre-Commit Chaos Hook (the regression net replacing CI)
 
 **Chosen:** Git pre-commit hook at `.githooks/pre-commit` running the chaos test suite before every commit. Without CI (Decision 12), this is the regression net that catches `.Result` regressions and broken NFR-P2 invariants before they're merged.
