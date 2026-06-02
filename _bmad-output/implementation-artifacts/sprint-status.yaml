@@ -37,6 +37,7 @@
 
 generated: 2026-06-01
 last_updated: 2026-06-02
+# 2026-06-02: Story 1.5 moved ready-for-dev → in-progress → review by dev-story workflow (claude-opus-4-7[1m]).
 # 2026-06-01: Story 1.1 moved ready-for-dev → in-progress → review by dev-story workflow.
 # 2026-06-01: Story 1.1 moved review → done by Sonnet code-review (bmad-code-review).
 # 2026-06-02: Story 1.2 context created via bmad-create-story; backlog → ready-for-dev.
@@ -48,6 +49,7 @@ last_updated: 2026-06-02
 # 2026-06-02: Story 1.4 context created via bmad-create-story; backlog → ready-for-dev.
 # 2026-06-02: Story 1.4 moved ready-for-dev → in-progress → review by dev-story workflow (claude-opus-4-7[1m]).
 # 2026-06-02: Story 1.4 moved review → done by Sonnet code-review (bmad-code-review). APPROVED.
+# 2026-06-02: Story 1.5 context created via bmad-create-story; backlog → ready-for-dev.
 project: ohSpy
 project_key: NOKEY
 tracking_system: file-system
@@ -60,7 +62,7 @@ development_status:
   1-2-ui-dispatcher-contract-collection-primitives: done
   1-3-upnp-http-client-facade-with-per-request-timeout-discipline: done
   1-4-xml-parsers-scpd-streaming-device-description-with-xxe-defence: done
-  1-5-diagnostic-emitter-ring-sink-file-sink: backlog
+  1-5-diagnostic-emitter-ring-sink-file-sink: review
   1-6-fakeupnpdevice-minimal-modes-first-chaos-test-netarchtest-rules: backlog
   epic-1-retrospective: optional
 

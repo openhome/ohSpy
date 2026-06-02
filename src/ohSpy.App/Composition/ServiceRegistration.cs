@@ -1,6 +1,7 @@
 namespace ohSpy.App.Composition;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ohSpy.App.Windowing;
 using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Http;
@@ -28,9 +29,33 @@ internal static class ServiceRegistration
         services.Configure<HttpTimeoutOptions>(_ => { /* defaults from HttpTimeoutOptions ctor */ });
         services.AddSingleton<IUpnpHttpClient, UpnpHttpClient>();
 
-        // Story 1.3 — minimal diagnostic surface; Story 1.5 will REPLACE this with the
-        // production DiagnosticEmitter + ring/file sinks.
-        services.AddSingleton<IDiagnosticEmitter, NoOpDiagnosticEmitter>();
+        // Story 1.5 — full diagnostic pipeline. REPLACES Story 1.3's NoOpDiagnosticEmitter
+        // placeholder. Required ordering: identity lookup + ring sink + file sink BEFORE
+        // emitter (emitter constructor depends on all three). Stories that consume
+        // IDiagnosticEmitter (1.3 HTTP facade, 1.4 parsers' callers) get the real one
+        // transparently — no call-site code changes.
+        services.Configure<DiagnosticOptions>(_ => { /* MinSeverity defaults to Information */ });
+
+        // Identity lookup: NULL placeholder until Story 2.3 swaps in registry-backed lookup.
+        services.AddSingleton<IDiagnosticIdentityLookup, NullIdentityLookup>();
+
+        // Ring sink (Core): bounded observable collection + UI-dispatcher-posted prepend.
+        services.AddSingleton<IDiagnosticRingSink, DiagnosticRingSink>();
+
+        // File sink (App): channel + background pump + rotation + late-bound ring sink for
+        // AC-8.6 startup-failure warning emission. Concrete-type registration exposed so
+        // App.OnLaunched can call SetRingSink after the provider builds.
+        services.AddSingleton<DiagnosticFileSink>();
+        services.AddSingleton<IDiagnosticFileSink>(sp => sp.GetRequiredService<DiagnosticFileSink>());
+
+        // Emitter: fan-out to MEL ILogger + ring sink + file sink. Replaces NoOp.
+        services.AddSingleton<IDiagnosticEmitter, DiagnosticEmitter>();
+
+        // MEL ILogger plumbing — without this, the constructor's ILogger<DiagnosticEmitter>
+        // dependency won't resolve. AddLogging() registers ILoggerFactory + ILogger<T>. No
+        // additional providers configured (DiagnosticEmitter is the consumer; MEL is a
+        // pass-through to dotnet-trace).
+        services.AddLogging();
 
         // Story 1.4 — XML parsers (Decision 5). Stateless across documents; singleton fine.
         services.AddSingleton<IScpdParser, XmlReaderScpdParser>();

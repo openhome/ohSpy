@@ -4,8 +4,9 @@ using ohSpy.Core.Diagnostics;
 
 /// <summary>
 /// Captures every emitter call into <see cref="Entries"/> so tests can assert the
-/// HTTP-error diagnostic stream. Substitutes for <c>NoOpDiagnosticEmitter</c> in
-/// tests that need to verify AC-5's "Warning diagnostic emitted on timeout" clause.
+/// HTTP-error diagnostic stream. Used by tests that need to verify the
+/// "Warning diagnostic emitted on timeout" clause without bringing in the full
+/// Story 1.5 ring + file sink pipeline.
 /// </summary>
 internal sealed class CapturingDiagnosticEmitter : IDiagnosticEmitter
 {

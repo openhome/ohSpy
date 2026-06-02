@@ -16,6 +16,8 @@
     <!-- Story 1.3: AC-11.3 tests verify services.Configure<HttpTimeoutOptions> + BuildServiceProvider. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Options" />
+    <!-- Story 1.5: DiagnosticEmitter tests need ILogger<>; DiagnosticFileSink ctor takes ILogger<>. -->
+    <PackageReference Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
 
   <ItemGroup>

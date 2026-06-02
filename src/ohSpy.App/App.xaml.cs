@@ -12,6 +12,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using Microsoft.UI.Xaml.Shapes;
 using ohSpy.App.Composition;
+using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Threading;
 
 // To learn more about WinUI, the WinUI project structure,
@@ -54,6 +55,18 @@ public partial class App : Application
         // captures DispatcherQueue.GetForCurrentThread() correctly. Singleton —
         // subsequent resolves return this same instance.
         _ = Services.GetRequiredService<IUiDispatcher>();
+
+        // Story 1.5: late-bind the ring sink into the file sink so the AC-8.6
+        // startup-failure warning path can emit through the ring. The two singletons
+        // can't reference each other via constructor injection (circular dep); the
+        // App's composition root resolves both and wires them post-construction. The
+        // IUiDispatcher pin above MUST remain first — resolving IDiagnosticRingSink
+        // transitively resolves IUiDispatcher (ring sink ctor depends on it), but
+        // keeping the explicit pin preserves the documented "force UI-thread capture
+        // before any other DI resolve" intent and gives a clear failure mode if a
+        // future refactor breaks the order.
+        Services.GetRequiredService<DiagnosticFileSink>().SetRingSink(
+            Services.GetRequiredService<IDiagnosticRingSink>());
 
         _window = new MainWindow();
         _window.Activate();

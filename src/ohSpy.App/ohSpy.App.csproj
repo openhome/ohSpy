@@ -40,6 +40,9 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <!-- Story 1.5: DiagnosticFileSink takes ILogger<DiagnosticFileSink>; ServiceRegistration calls AddLogging()
+         (extension lives in Microsoft.Extensions.Logging, NOT .DependencyInjection). Version pinned centrally. -->
+    <PackageReference Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
 
   <ItemGroup>
