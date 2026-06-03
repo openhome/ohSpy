@@ -94,6 +94,11 @@ internal static class ServiceRegistration
         services.AddSingleton<DiscoveryService>();
         services.AddSingleton<IDiscoveryService>(sp => sp.GetRequiredService<DiscoveryService>());
 
+        // Story 2.6 — NodeServices bundle: the Core services the tree-node VMs need to lazily
+        // fetch + parse an SCPD on expand. All four members are already-registered singletons;
+        // the bundle itself is a stateless singleton threaded into the VM graph by ShellViewModel.
+        services.AddSingleton<NodeServices>();
+
         // Story 2.5 — Main window shell ViewModel. Singleton: one window, one ShellViewModel.
         // ShellViewModel owns the AdapterScope lifetime (Amendment A26 migration from App.xaml.cs).
         // DeviceTreeViewModel is constructed by ShellViewModel, not registered separately.

@@ -86,6 +86,34 @@
                             </DataTemplate>
                         </local:NodeDataTemplateSelector.DeviceTemplate>
 
+                        <local:NodeDataTemplateSelector.ServiceTemplate>
+                            <DataTemplate x:DataType="vm:ServiceNodeViewModel">
+                                <StackPanel Orientation="Horizontal">
+                                    <FontIcon
+                                        VerticalAlignment="Center" Margin="0,0,8,0"
+                                        FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                        Glyph="{x:Bind KindGlyph}" />
+                                    <TextBlock
+                                        Text="{x:Bind Label, Mode=OneWay}"
+                                        TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </local:NodeDataTemplateSelector.ServiceTemplate>
+
+                        <local:NodeDataTemplateSelector.ActionTemplate>
+                            <DataTemplate x:DataType="vm:ActionNodeViewModel">
+                                <StackPanel Orientation="Horizontal">
+                                    <FontIcon
+                                        VerticalAlignment="Center" Margin="0,0,8,0"
+                                        FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                        Glyph="{x:Bind KindGlyph}" />
+                                    <TextBlock
+                                        Text="{x:Bind Label, Mode=OneWay}"
+                                        TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </local:NodeDataTemplateSelector.ActionTemplate>
+
                         <local:NodeDataTemplateSelector.FallbackTemplate>
                             <DataTemplate x:DataType="vm:INodeViewModel">
                                 <TextBlock

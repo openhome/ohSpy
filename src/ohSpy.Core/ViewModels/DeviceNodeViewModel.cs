@@ -7,6 +7,8 @@ using ohSpy.Core.Devices;
 public partial class DeviceNodeViewModel : ObservableObject, INodeViewModel
 {
     private RegistryEntry _entry;
+    private readonly NodeServices _services;
+    private int _servicesBuilt; // 0 = not built, 1 = built (Interlocked guard — AC-2.6.2)
 
     [ObservableProperty] private string _friendlyName = "";
     [ObservableProperty] private string _secondaryDetail = "";
@@ -22,9 +24,10 @@ public partial class DeviceNodeViewModel : ObservableObject, INodeViewModel
 
     public ObservableCollection<INodeViewModel> Children { get; } = [];
 
-    public DeviceNodeViewModel(RegistryEntry entry)
+    public DeviceNodeViewModel(RegistryEntry entry, NodeServices services)
     {
         _entry = entry;
+        _services = services;
         Children.Add(new LoadingPlaceholderViewModel()); // AC-A1.1: force expand chevron
         RefreshFrom(entry);
     }
@@ -43,8 +46,21 @@ public partial class DeviceNodeViewModel : ObservableObject, INodeViewModel
         SecondaryDetail = ComputeSecondaryDetail(entry);
     }
 
-    // Story 2.6 wires service enumeration here.
-    partial void OnIsExpandedChanged(bool value) { }
+    // AC-2.6.2: first expand swaps the placeholder for the (already-loaded, flattened)
+    // service list — synchronous, no HTTP. Build once: re-expand must NOT rebuild (that would
+    // emit a second Reset and collapse any expanded service subtrees — the Story 2.5 deferral).
+    partial void OnIsExpandedChanged(bool value)
+    {
+        if (!value) return;
+        if (Interlocked.Exchange(ref _servicesBuilt, 1) == 1) return;
+
+        var services = _entry.Description?.Services ?? [];
+        var nodes = services
+            .Select(s => (INodeViewModel)new ServiceNodeViewModel(
+                s, _entry.LocationUrl, _entry.Uuid, _services, _entry.DeviceToken))
+            .ToList();
+        ReplaceWith(nodes); // single Reset — AC-A1.4
+    }
 
     internal void ReplaceWith(IReadOnlyList<INodeViewModel> newChildren)
     {

@@ -8,14 +8,16 @@ public sealed class DeviceTreeViewModel : IDisposable
 {
     private readonly IDeviceRegistry _registry;
     private readonly IUiDispatcher _ui;
+    private readonly NodeServices _nodeServices;
     private int _disposed;
 
     public IdentityKeyedSortedCollection<Guid, DeviceNodeViewModel> Devices { get; }
 
-    public DeviceTreeViewModel(IDeviceRegistry registry, IUiDispatcher ui)
+    public DeviceTreeViewModel(IDeviceRegistry registry, IUiDispatcher ui, NodeServices nodeServices)
     {
         _registry = registry;
         _ui = ui;
+        _nodeServices = nodeServices;
         Devices = new IdentityKeyedSortedCollection<Guid, DeviceNodeViewModel>(
             vm => vm.Uuid,
             DeviceNodeComparer.Instance);
@@ -39,7 +41,7 @@ public sealed class DeviceTreeViewModel : IDisposable
             }
             else
             {
-                Devices.Add(new DeviceNodeViewModel(entry));
+                Devices.Add(new DeviceNodeViewModel(entry, _nodeServices));
             }
         });
 

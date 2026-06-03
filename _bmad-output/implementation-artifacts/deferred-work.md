@@ -1,5 +1,9 @@
 # Deferred Work
 
+## Deferred from: code review of 2-6-service-action-expansion-lazy-scpd-incremental (2026-06-03)
+
+- **AC-2.6.8 cancellation test only validates parser-path OCE** — `Expand_DeviceTokenCancelled_NoError_NoDiagnostic_AC268` pre-cancels the token but `StubUpnpHttpClient.ScpdResponder` does not check `ct`, so `FetchScpdAsync` succeeds and OCE is only observed at `StubScpdParser.ct.ThrowIfCancellationRequested()`. The HTTP-layer cancellation path is untested. Behaviour is correct in both cases; a targeted test would set `ScpdResponder = (_, ct) => { ct.ThrowIfCancellationRequested(); return Task.FromResult(...); }`. Low risk — deferred to avoid complexity in the test-strategy pattern already established.
+
 ## Deferred from: code review of 2-5-main-window-shell-device-tree-top-level-rows (2026-06-03)
 
 - **`DeviceNodeViewModel.ReplaceWith` emits Reset** — `Children.Clear()` + `Add` raises `NotifyCollectionChangedAction.Reset`, which collapses any expanded service subtrees. Harmless for the placeholder→real-children first swap, but a second `ReplaceWith` (service-list re-fetch) would collapse expansion — the exact failure mode FR-054 guards against at the top level. Surfaces when Story 2.6 wires real expansion; consider incremental child reconciliation there instead of Clear+Add.

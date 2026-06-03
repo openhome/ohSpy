@@ -18,11 +18,14 @@ public sealed class DeviceTreeViewModelTests : IDisposable
     private readonly InlineUiDispatcher _ui = new();
     private readonly DeviceRegistry _registry;
     private readonly DeviceTreeViewModel _vm;
+    private readonly NodeServices _nodeServices;
 
     public DeviceTreeViewModelTests()
     {
         _registry = new DeviceRegistry(_ui);
-        _vm = new DeviceTreeViewModel(_registry, _ui);
+        _nodeServices = new NodeServices(
+            new StubUpnpHttpClient(), new StubScpdParser(), _ui, new CapturingDiagnosticEmitter());
+        _vm = new DeviceTreeViewModel(_registry, _ui, _nodeServices);
     }
 
     public void Dispose() => _vm.Dispose();
@@ -87,7 +90,7 @@ public sealed class DeviceTreeViewModelTests : IDisposable
         var posted = false;
         var recordingUi = new RecordingUiDispatcher(() => posted = true);
         var registry = new DeviceRegistry(new InlineUiDispatcher());
-        var vm = new DeviceTreeViewModel(registry, recordingUi);
+        var vm = new DeviceTreeViewModel(registry, recordingUi, _nodeServices);
 
         var entry = new RegistryEntry(Guid.NewGuid(), Location, DateTime.UtcNow, CancellationToken.None);
         entry.MarkInFlight();

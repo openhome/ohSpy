@@ -26,13 +26,14 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
         IDiscoveryService discovery,
         IDeviceRegistry registry,
         IUiDispatcher ui,
-        IDiagnosticEmitter diag)
+        IDiagnosticEmitter diag,
+        NodeServices nodeServices)
     {
         _adapterEnum = adapterEnum;
         _transport   = transport;
         _discovery   = discovery;
         _diag        = diag;
-        _deviceTree  = new DeviceTreeViewModel(registry, ui);
+        _deviceTree  = new DeviceTreeViewModel(registry, ui, nodeServices);
     }
 
     // Called from App.OnLaunched (fire-and-forget, Amendment A26 pattern).

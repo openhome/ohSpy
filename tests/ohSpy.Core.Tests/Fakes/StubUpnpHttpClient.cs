@@ -52,9 +52,16 @@ internal sealed class StubUpnpHttpClient : IUpnpHttpClient
         }
     }
 
-    // Unused by Story 2.3 — the dispatcher only fetches device descriptions.
-    public Task<byte[]> FetchScpdAsync(Uri scpdUrl, CancellationToken ct) =>
-        throw new NotSupportedException();
+    /// <summary>Supplies the SCPD-fetch result. Default: throws NotSupportedException so
+    /// tests that don't opt in still fail loudly if the path is hit unexpectedly.</summary>
+    public Func<Uri, CancellationToken, Task<byte[]>>? ScpdResponder { get; set; }
+
+    public async Task<byte[]> FetchScpdAsync(Uri scpdUrl, CancellationToken ct)
+    {
+        if (ScpdResponder is null) throw new NotSupportedException();
+        lock (_gate) { _requested.Add(scpdUrl); }
+        return await ScpdResponder(scpdUrl, ct).ConfigureAwait(false);
+    }
 
     public Task<SoapResponse> InvokeActionAsync(SoapRequest request, CancellationToken ct) =>
         throw new NotSupportedException();
