@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using ohSpy.App.Composition;
+using ohSpy.App.Windowing;
 using ohSpy.Core.Devices;
 using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Threading;
@@ -87,6 +88,9 @@ public partial class App : Application
         _ = _shellVm.StartAsync(_appCts.Token);
 
         _window = new MainWindow(_shellVm);
+        // Story 2.9: give the Properties-popup launcher its FR-046 parent (the MainWindow is
+        // created here, not in DI, so the shell window is injected post-construction).
+        Services.GetRequiredService<PropertiesLauncher>().ShellWindow = _window;
         _window.Closed += OnWindowClosed;
         _window.Activate();
     }

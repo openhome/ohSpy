@@ -4,7 +4,6 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ohSpy.Core.Devices;
-using ohSpy.Core.Diagnostics;
 
 public partial class DeviceNodeViewModel : ObservableObject, INodeViewModel
 {
@@ -80,14 +79,11 @@ public partial class DeviceNodeViewModel : ObservableObject, INodeViewModel
         BrowserLaunch.OpenInDefaultBrowser(
             _entry.LocationUrl, _services.Launcher, _services.Diag, _entry.Uuid);
 
-    // STUB — AC-2.8.1 surfaces the "Properties…" item; the read-only Properties window is
-    // delivered in Story 2.9, which replaces this body (and may relocate the command to the
-    // App layer, since opening a Window is not a Core concern). Until then: warn, do not crash.
+    // AC-2.9.7: open the read-only Properties window (Story 2.9). The window construction lives in
+    // the App-side IPropertiesLauncher impl (a Core VM can't new up a WinUI Window — Pattern 2);
+    // this command just hands off the entry. Synchronous fire-and-forget (matches FetchXml).
     [RelayCommand]
-    private void OpenProperties() =>
-        _services.Diag.Warning(DiagCategories.FeatureNotImplemented,
-            "Properties window not yet implemented (Story 2.9)",
-            new DiagnosticContext { DeviceUuid = _entry.Uuid });
+    private void OpenProperties() => _services.PropertiesLauncher.OpenProperties(_entry);
 
     // FR-051: secondary detail is "<deviceTypeTail> <U+00B7 middle-dot> <host>:<port>".
     // Degenerate device metadata is guarded: an empty type tail drops the separator, and an

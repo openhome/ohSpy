@@ -18,4 +18,5 @@ public sealed record NodeServices(
     IScpdParser ScpdParser,
     IUiDispatcher Ui,
     IDiagnosticEmitter Diag,
-    IUriLauncher Launcher); // Story 2.8 — context-menu shell-open seam
+    IUriLauncher Launcher,           // Story 2.8 — context-menu shell-open seam
+    IPropertiesLauncher PropertiesLauncher); // Story 2.9 — open the Properties window

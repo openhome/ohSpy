@@ -10,6 +10,10 @@
     <AssemblyName>ohSpy.App</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <UseWinUI>true</UseWinUI>
+    <!-- Story 2.9: the [LibraryImport] source generator emits an unsafe stub for
+         WindowOwnershipManager.SetWindowLongPtr (SYSLIB1062), so unsafe blocks must be allowed.
+         App-only — ohSpy.Core remains safe (no P/Invoke per Pattern 2). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <WindowsPackageType>None</WindowsPackageType>                     <!-- Unpackaged -->
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>     <!-- bundle WAS -->
     <SelfContained>true</SelfContained>                               <!-- bundle .NET -->

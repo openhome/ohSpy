@@ -20,7 +20,7 @@ public sealed class DeviceNodeViewModelTests
     // synchronously (no SCPD fetch), so the HTTP/parser stubs stay untouched there too.
     private static readonly NodeServices NodeServices = new(
         new StubUpnpHttpClient(), new StubScpdParser(), new InlineUiDispatcher(),
-        new CapturingDiagnosticEmitter(), new FakeUriLauncher());
+        new CapturingDiagnosticEmitter(), new FakeUriLauncher(), new FakePropertiesLauncher());
 
     private static RegistryEntry PendingEntry(Guid? uuid = null, Uri? location = null) =>
         new(uuid ?? Guid.NewGuid(), location ?? BaseLocation, DateTime.UtcNow, CancellationToken.None);
@@ -219,7 +219,7 @@ public sealed class DeviceNodeViewModelTests
         // list is synchronous and fetch-free, so expanding the DEVICE must not touch HTTP.
         var http = new StubUpnpHttpClient();
         var services = new NodeServices(http, new StubScpdParser(), new InlineUiDispatcher(),
-            new CapturingDiagnosticEmitter(), new FakeUriLauncher());
+            new CapturingDiagnosticEmitter(), new FakeUriLauncher(), new FakePropertiesLauncher());
         var entry = LoadedEntryWithServices(
             Svc("urn:schemas-upnp-org:service:RenderingControl:1", "/RC/Scpd.xml"));
         var vm = new DeviceNodeViewModel(entry, services);
@@ -263,20 +263,21 @@ public sealed class DeviceNodeViewModelTests
 
     // ─── Story 2.8: context-menu commands (AC-2.8.1/2.8.2/2.8.3) ────────────────
 
-    private static (NodeServices services, FakeUriLauncher launcher, CapturingDiagnosticEmitter diag)
-        CapturingServices()
+    private static (NodeServices services, FakeUriLauncher launcher, CapturingDiagnosticEmitter diag,
+        FakePropertiesLauncher properties) CapturingServices()
     {
         var launcher = new FakeUriLauncher();
         var diag = new CapturingDiagnosticEmitter();
+        var properties = new FakePropertiesLauncher();
         return (new NodeServices(new StubUpnpHttpClient(), new StubScpdParser(),
-            new InlineUiDispatcher(), diag, launcher), launcher, diag);
+            new InlineUiDispatcher(), diag, launcher, properties), launcher, diag, properties);
     }
 
     [Fact]
     [Trait("ac", "AC-2.8.2")]
     public void FetchXmlCommand_OpensLocationUrl_AC282()
     {
-        var (services, launcher, diag) = CapturingServices();
+        var (services, launcher, diag, _) = CapturingServices();
         var location = new Uri("http://192.168.1.100:49152/desc.xml");
         var vm = new DeviceNodeViewModel(LoadedEntry(location: location), services);
 
@@ -290,7 +291,7 @@ public sealed class DeviceNodeViewModelTests
     [Trait("ac", "AC-2.8.3")]
     public void FetchXmlCommand_NonHttpLocation_Refused_Warns_AC283()
     {
-        var (services, launcher, diag) = CapturingServices();
+        var (services, launcher, diag, _) = CapturingServices();
         var vm = new DeviceNodeViewModel(LoadedEntry(location: new Uri("file:///x/desc.xml")), services);
 
         vm.FetchXmlCommand.Execute(null);
@@ -304,7 +305,7 @@ public sealed class DeviceNodeViewModelTests
     [Trait("ac", "AC-2.8.2")]
     public void FetchXmlCommand_LaunchFailure_Warns_NoCrash_AC282()
     {
-        var (services, launcher, diag) = CapturingServices();
+        var (services, launcher, diag, _) = CapturingServices();
         launcher.ThrowOnLaunch = new InvalidOperationException("no browser");
         var uuid = Guid.NewGuid();
         var vm = new DeviceNodeViewModel(LoadedEntry(uuid: uuid), services);
@@ -318,17 +319,20 @@ public sealed class DeviceNodeViewModelTests
     }
 
     [Fact]
-    [Trait("ac", "AC-2.8.1")]
-    public void OpenPropertiesCommand_Stub_WarnsNotImplemented_AC281()
+    [Trait("ac", "AC-2.9.7")]
+    public void OpenPropertiesCommand_OpensPropertiesWindow_AC297()
     {
-        var (services, launcher, diag) = CapturingServices();
-        var vm = new DeviceNodeViewModel(LoadedEntry(), services);
+        // Story 2.9 replaces the 2.8 "not yet implemented" stub: the command now crosses the
+        // Core/App seam via IPropertiesLauncher, handing the device's RegistryEntry across.
+        var (services, launcher, diag, properties) = CapturingServices();
+        var uuid = Guid.NewGuid();
+        var vm = new DeviceNodeViewModel(LoadedEntry(uuid: uuid), services);
 
         var act = () => vm.OpenPropertiesCommand.Execute(null);
 
         act.Should().NotThrow();
-        launcher.Launched.Should().BeEmpty();
-        diag.Entries.Should().ContainSingle()
-            .Which.Category.Should().Be(DiagCategories.FeatureNotImplemented);
+        launcher.Launched.Should().BeEmpty("opening Properties is not a shell-open");
+        diag.Entries.Should().BeEmpty("the 2.8 NotImplemented warning is removed in 2.9");
+        properties.Opened.Should().ContainSingle().Which.Uuid.Should().Be(uuid);
     }
 }

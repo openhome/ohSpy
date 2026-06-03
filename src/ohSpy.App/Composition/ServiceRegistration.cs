@@ -98,6 +98,20 @@ internal static class ServiceRegistration
         // Story 2.8 — OS shell-open seam for the context-menu "Fetch XML" commands (FR-019/020).
         services.AddSingleton<IUriLauncher, ShellUriLauncher>();
 
+        // Story 2.9 — window ownership (D10) + Properties popup (FR-052). Registered BEFORE the
+        // NodeServices line so IPropertiesLauncher auto-resolves into the bundle.
+        services.AddSingleton<IWindowOwnershipManager, WindowOwnershipManager>();
+        // Pattern 7: per-popup VM factory — no IServiceProvider leak at the call site.
+        services.AddSingleton<Func<RegistryEntry, PropertiesViewModel>>(sp =>
+            entry => new PropertiesViewModel(
+                entry,
+                sp.GetRequiredService<IDeviceRegistry>(),
+                sp.GetRequiredService<IUriLauncher>(),
+                sp.GetRequiredService<IDiagnosticEmitter>()));
+        // Concrete + interface (dual reg, DiscoveryService precedent) so OnLaunched can set ShellWindow.
+        services.AddSingleton<PropertiesLauncher>();
+        services.AddSingleton<IPropertiesLauncher>(sp => sp.GetRequiredService<PropertiesLauncher>());
+
         // Story 2.6 — NodeServices bundle: the Core services the tree-node VMs need to lazily
         // fetch + parse an SCPD on expand. All members are already-registered singletons;
         // the bundle itself is a stateless singleton threaded into the VM graph by ShellViewModel.

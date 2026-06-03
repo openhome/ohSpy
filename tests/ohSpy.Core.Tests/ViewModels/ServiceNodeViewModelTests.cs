@@ -36,9 +36,10 @@ public sealed class ServiceNodeViewModelTests
 
     private static NodeServices MakeNodeServices(
         StubUpnpHttpClient http, IScpdParser parser,
-        IUiDispatcher? ui = null, IDiagnosticEmitter? diag = null, IUriLauncher? launcher = null) =>
+        IUiDispatcher? ui = null, IDiagnosticEmitter? diag = null, IUriLauncher? launcher = null,
+        IPropertiesLauncher? propertiesLauncher = null) =>
         new(http, parser, ui ?? new InlineUiDispatcher(), diag ?? new CapturingDiagnosticEmitter(),
-            launcher ?? new FakeUriLauncher());
+            launcher ?? new FakeUriLauncher(), propertiesLauncher ?? new FakePropertiesLauncher());
 
     private static ServiceNodeViewModel NewVm(
         NodeServices services, ServiceDescription? service = null,
