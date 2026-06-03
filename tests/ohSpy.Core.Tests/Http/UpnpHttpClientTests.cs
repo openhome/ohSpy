@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Http;
+using ohSpy.Core.Models;
 using ohSpy.Core.Tests.Fakes;
 
 public class UpnpHttpClientTests
@@ -230,13 +231,14 @@ public class UpnpHttpClientTests
         SampleControlUrl,
         "urn:schemas-upnp-org:service:AVTransport:1",
         "Browse",
-        "<?xml version=\"1.0\"?><s:Envelope/>");
+        Array.Empty<SoapArgument>());
 
     [Fact]
     [Trait("ac", "AC-3.3")]
+    [Trait("ac", "AC-3.1.5")]
     public async Task InvokeAction_Soap500WithFault_ThrowsUpnpFaultException()
     {
-        var (client, _, _) = Build((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        var (client, _, diag) = Build((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
         {
             Content = new StringContent(FaultEnvelope, Encoding.UTF8, "text/xml"),
         }));
@@ -247,13 +249,22 @@ public class UpnpHttpClientTests
         ex.Which.ErrorCode.Should().Be(701);
         ex.Which.ErrorDescription.Should().Be("Invalid Action");
         ex.Which.Url.Should().Be(SampleControlUrl);
+
+        // AC-3.1.5 #17: parsable-500 emits a NEW Warning SoapFault diagnostic.
+        var entry = diag.Entries.Should().ContainSingle(e => e.Category == DiagCategories.SoapFault).Which;
+        entry.Severity.Should().Be("Warning");
+        entry.Context.Url.Should().Be(SampleControlUrl.ToString());
+        entry.Context.ActionName.Should().Be("Browse");
+        entry.Context.StatusCode.Should().Be(500);
+        entry.Context.ErrorText.Should().Be("701: Invalid Action");
     }
 
     [Fact]
     [Trait("ac", "AC-3.3")]
+    [Trait("ac", "AC-3.1.5")]
     public async Task InvokeAction_Malformed500_ThrowsUpnpTransportException()
     {
-        var (client, _, _) = Build((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        var (client, _, diag) = Build((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
         {
             Content = new StringContent("<html><body>server error</body></html>", Encoding.UTF8, "text/html"),
         }));
@@ -261,22 +272,67 @@ public class UpnpHttpClientTests
         Func<Task> act = () => client.InvokeActionAsync(SampleSoap(), CancellationToken.None);
         var ex = await act.Should().ThrowAsync<UpnpTransportException>();
         ex.Which.StatusCode.Should().Be(500);
+
+        // AC-3.1.5 #18: unparsable-500 emits Warning SoapInvoke (was HttpTransport).
+        var entry = diag.Entries.Should().ContainSingle(e => e.Category == DiagCategories.SoapInvoke).Which;
+        entry.Severity.Should().Be("Warning");
+        entry.Context.StatusCode.Should().Be(500);
+        diag.Entries.Where(e => e.Category == DiagCategories.HttpTransport).Should().BeEmpty();
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.1.5")]
+    public async Task InvokeAction_NonSuccessNon500_ThrowsUpnpTransportExceptionAndEmitsSoapInvoke()
+    {
+        var (client, _, diag) = Build((_, _) => Task.FromResult(
+            new HttpResponseMessage(HttpStatusCode.NotFound)
+            {
+                Content = new StringContent("not found", Encoding.UTF8, "text/plain"),
+            }));
+
+        Func<Task> act = () => client.InvokeActionAsync(SampleSoap(), CancellationToken.None);
+        var ex = await act.Should().ThrowAsync<UpnpTransportException>();
+        ex.Which.StatusCode.Should().Be(404);
+
+        // AC-3.1.5 #19: non-2xx/non-500 emits Warning SoapInvoke (was HttpTransport).
+        var entry = diag.Entries.Should().ContainSingle(e => e.Category == DiagCategories.SoapInvoke).Which;
+        entry.Severity.Should().Be("Warning");
+        entry.Context.ActionName.Should().Be("Browse");
+        entry.Context.StatusCode.Should().Be(404);
+        diag.Entries.Where(e => e.Category == DiagCategories.HttpTransport).Should().BeEmpty();
     }
 
     [Fact]
     [Trait("ac", "AC-3")]
-    public async Task InvokeAction_HappyPath_ReturnsSoapResponseAndSetsSoapActionHeader()
+    public async Task InvokeAction_HappyPath_ReturnsStructuredOutputArgsAndSetsSoapActionHeader()
     {
-        const string responseEnvelope = "<?xml version=\"1.0\"?><s:Envelope><s:Body><BrowseResponse/></s:Body></s:Envelope>";
-        var (client, handler, _) = Build((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        // Response envelope carries a <u:BrowseResponse> with two output args (one XML-escaped).
+        const string responseEnvelope = """
+            <?xml version="1.0"?>
+            <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+              <s:Body>
+                <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+                  <Result>&lt;DIDL-Lite/&gt;</Result>
+                  <NumberReturned>2</NumberReturned>
+                </u:BrowseResponse>
+              </s:Body>
+            </s:Envelope>
+            """;
+        var (client, handler, diag) = Build((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(responseEnvelope, Encoding.UTF8, "text/xml"),
         }));
 
         var result = await client.InvokeActionAsync(SampleSoap(), CancellationToken.None);
 
-        result.StatusCode.Should().Be(HttpStatusCode.OK);
-        result.ResponseXml.Should().Be(responseEnvelope);
+        result.ActionName.Should().Be("Browse");
+        result.OutputArguments.Should().HaveCount(2);
+        // Assert on what the READER produced (unescaped), not on inputs we handed in.
+        result.OutputArguments[0].Name.Should().Be("Result");
+        result.OutputArguments[0].Value.Should().Be("<DIDL-Lite/>");
+        result.OutputArguments[1].Name.Should().Be("NumberReturned");
+        result.OutputArguments[1].Value.Should().Be("2");
+        diag.Entries.Should().BeEmpty();
 
         var req = handler.Requests.Should().ContainSingle().Which;
         req.Method.Should().Be(HttpMethod.Post);
@@ -328,6 +384,25 @@ public class UpnpHttpClientTests
         var (client, _, _) = Build((_, _) => throw new HttpRequestException("conn reset"));
         Func<Task> act = () => client.InvokeActionAsync(SampleSoap(), CancellationToken.None);
         await act.Should().ThrowAsync<UpnpTransportException>();
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.1.4")]
+    public async Task InvokeAction_HappyPath_MalformedResponseXml_ThrowsUpnpProtocolExceptionAndEmitsSoapInvoke()
+    {
+        // Regression guard: SoapResponseReader throws XmlException on malformed 2xx body.
+        // The UpnpHttpClient must catch it and surface a typed UpnpProtocolException +
+        // Warning SoapInvoke diagnostic rather than letting XmlException escape unhandled.
+        var (client, _, diag) = Build((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("<broken><xml", Encoding.UTF8, "text/xml"),
+        }));
+
+        Func<Task> act = () => client.InvokeActionAsync(SampleSoap(), CancellationToken.None);
+        await act.Should().ThrowAsync<UpnpProtocolException>();
+
+        diag.Entries.Should().ContainSingle(e => e.Category == DiagCategories.SoapInvoke);
+        diag.Entries.Single().Severity.Should().Be("Warning");
     }
 
     [Fact]

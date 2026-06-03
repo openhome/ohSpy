@@ -1,5 +1,11 @@
 # Deferred Work
 
+## Deferred from: code review of 3-1-soap-envelope-builder-fault-parser-and-invokeactionasync-wire-up (2026-06-03)
+
+- **`$"unexpected status {(int)resp.StatusCode}"` — string interpolation in diagnostic message** [`src/ohSpy.Core/Http/UpnpHttpClient.cs:192`] — pre-existing from Story 1.3 baseline; Pattern 11 purists would keep the status-code out of the message (it's already in `DiagnosticContext.StatusCode`). Low cosmetic impact; revisit when a diagnostic-message cleanup pass is warranted.
+- **`UpnpFault` declared `public` but only consumed Core-internally** [`src/ohSpy.Core/Soap/UpnpFault.cs:12`] — intentional dev choice; Story 3.2 may use it from App layer. Not a problem now; if 3.2 doesn't use it from App, consider narrowing to `internal` at that point.
+- **A9: `UpnpTransportException` synthetic-inner form** [`src/ohSpy.Core/Http/UpnpExceptions.cs:40-44`] — Amendment A9 flagged `inner ?? new InvalidOperationException(message)` for replacement with `: base(message, inner)`. Dev deliberately out-of-scoped to keep 3.1 tight. Apply when any PR next touches `UpnpExceptions.cs`.
+
 ## Deferred from: code review of 2-7-ssdp-message-log-right-pane-virtualised-smart-auto-follow (2026-06-03)
 
 - **`OnLogEntriesChanged` does not assert `NewStartingIndex == 0`** — The scroll handler in `MainWindow.xaml.cs` guards on `NotifyCollectionChangedAction.Add` but does not verify `e.NewStartingIndex == 0`. `BoundedObservableCollection` is sealed and `PrependNewest` is its only Add operation (always index 0), so this is safe today. If the collection gains an append or mid-insert operation in a future story, any `Add` at index > 0 would incorrectly trigger the at-top anchor or offset compensation. Low risk while `BoundedObservableCollection` remains prepend-only; revisit if new insertion variants are added. `src/ohSpy.App/MainWindow.xaml.cs:47`.

@@ -1,6 +1,7 @@
 namespace ohSpy.Core.Tests.Fakes;
 
 using ohSpy.Core.Http;
+using ohSpy.Core.Models;
 
 /// <summary>
 /// Test double for <see cref="IUpnpHttpClient"/> covering only the device-description

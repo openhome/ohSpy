@@ -1,5 +1,7 @@
 namespace ohSpy.Core.Http;
 
+using ohSpy.Core.Models;
+
 /// <summary>
 /// Typed facade over a single shared <see cref="HttpClient"/> for all UPnP outbound HTTP.
 /// Every method bakes a per-request timeout (via linked CTS) and a per-response size cap

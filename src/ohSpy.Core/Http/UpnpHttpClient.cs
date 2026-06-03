@@ -3,9 +3,10 @@ namespace ohSpy.Core.Http;
 using System.Diagnostics;
 using System.Net;
 using System.Text;
-using System.Xml;
 using Microsoft.Extensions.Options;
 using ohSpy.Core.Diagnostics;
+using ohSpy.Core.Models;
+using ohSpy.Core.Soap;
 
 /// <summary>
 /// Production implementation of <see cref="IUpnpHttpClient"/>. Owns a single shared
@@ -150,7 +151,7 @@ internal sealed class UpnpHttpClient : IUpnpHttpClient, IDisposable
         {
             using var req = new HttpRequestMessage(HttpMethod.Post, request.ControlUrl)
             {
-                Content = new StringContent(request.EnvelopeXml, Encoding.UTF8, "text/xml"),
+                Content = new StringContent(SoapEnvelopeBuilder.Build(request), Encoding.UTF8, "text/xml"),
             };
             // SOAPAction MUST be quoted: "urn:..#ActionName"
             req.Headers.TryAddWithoutValidation("SOAPAction", $"\"{request.ServiceType}#{request.ActionName}\"");
@@ -160,30 +161,53 @@ internal sealed class UpnpHttpClient : IUpnpHttpClient, IDisposable
 
             EnforceSizeCapOnHeaders(resp, request.ControlUrl, _opts.MaxSoapResponseBytes);
             var bytes = await ReadWithSizeCapAsync(resp, _opts.MaxSoapResponseBytes, linked.Token).ConfigureAwait(false);
-            var responseXml = Encoding.UTF8.GetString(bytes);
 
             if (resp.StatusCode == HttpStatusCode.InternalServerError)
             {
-                // SOAP fault path — try to parse <s:Fault><detail><UPnPError><errorCode/></UPnPError></detail>
-                if (TryParseUPnPError(responseXml, out var errorCode, out var errorDescription))
+                // SOAP fault path — try to parse <s:Fault><detail><UPnPError><errorCode/></UPnPError></detail>.
+                // Emit diagnostics before throw (these paths bypass the catch-block diagnostic since
+                // the throw originates inside try; UpnpFault/UpnpTransport are not HttpRequestException).
+                // DeviceUuid is absent at this layer (SoapRequest carries no uuid) — Story 3.2's popup
+                // VM emits a second, UUID-bearing SoapFault diagnostic at its catch site.
+                if (SoapFaultParser.TryParse(bytes, out var fault))
                 {
-                    throw new UpnpFaultException(request.ControlUrl, request.ActionName, errorCode, errorDescription);
+                    _diag.Warning(DiagCategories.SoapFault, "SOAP action returned a UPnP fault",
+                        new DiagnosticContext
+                        {
+                            Url = request.ControlUrl.ToString(),
+                            ActionName = request.ActionName,
+                            StatusCode = 500,
+                            ErrorText = $"{fault.ErrorCode}: {fault.ErrorDescription}",
+                        });
+                    throw new UpnpFaultException(request.ControlUrl, request.ActionName,
+                        fault.ErrorCode, fault.ErrorDescription);
                 }
-                // Malformed fault -> transport error. Emit diagnostic before throw
-                // (this path bypasses the catch-block diagnostic since the throw originates inside try).
-                _diag.Warning(DiagCategories.HttpTransport, "HTTP 500 without parseable UPnPError",
+                _diag.Warning(DiagCategories.SoapInvoke, "HTTP 500 without parseable UPnPError",
                     new DiagnosticContext { Url = request.ControlUrl.ToString(), ActionName = request.ActionName, StatusCode = 500 });
                 throw new UpnpTransportException(request.ControlUrl,
                     "HTTP 500 without parseable UPnPError", 500);
             }
             if (!resp.IsSuccessStatusCode)
             {
-                _diag.Warning(DiagCategories.HttpTransport, $"unexpected status {(int)resp.StatusCode}",
+                _diag.Warning(DiagCategories.SoapInvoke, $"unexpected status {(int)resp.StatusCode}",
                     new DiagnosticContext { Url = request.ControlUrl.ToString(), ActionName = request.ActionName, StatusCode = (int)resp.StatusCode });
                 throw new UpnpTransportException(request.ControlUrl,
                     $"unexpected status {(int)resp.StatusCode}", (int)resp.StatusCode);
             }
-            return new SoapResponse(resp.StatusCode, responseXml);
+            try
+            {
+                return new SoapResponse(request.ActionName, SoapResponseReader.ReadOutputArguments(bytes));
+            }
+            catch (System.Xml.XmlException ex)
+            {
+                // 2xx with unparseable body — surface as a protocol error + diagnostic so the
+                // caller always gets a typed exception. (SoapResponseReader throws XmlException;
+                // without this catch it would escape all InvokeActionAsync catch blocks.)
+                _diag.Warning(DiagCategories.SoapInvoke, "SOAP response body could not be parsed",
+                    new DiagnosticContext { Url = request.ControlUrl.ToString(), ActionName = request.ActionName, ErrorText = ex.Message });
+                throw new UpnpProtocolException(request.ControlUrl,
+                    $"SOAP response body could not be parsed: {ex.Message}");
+            }
         }
         catch (OperationCanceledException) when (external.IsCancellationRequested) { throw; }
         catch (OperationCanceledException)
@@ -200,56 +224,6 @@ internal sealed class UpnpHttpClient : IUpnpHttpClient, IDisposable
                 new DiagnosticContext { Url = request.ControlUrl.ToString(), ActionName = request.ActionName,
                                          StatusCode = (int?)ex.StatusCode });
             throw new UpnpTransportException(request.ControlUrl, ex.Message, (int?)ex.StatusCode, ex);
-        }
-    }
-
-    // Minimal inline UPnPError parser. Story 3.1 (SOAP envelope builder + fault parser)
-    // will replace this with a fuller XML parser; for now we extract just errorCode +
-    // errorDescription from the SOAP fault envelope.
-    private static bool TryParseUPnPError(string xml, out int errorCode, out string errorDescription)
-    {
-        errorCode = 0;
-        errorDescription = string.Empty;
-        try
-        {
-            var settings = new XmlReaderSettings
-            {
-                DtdProcessing = DtdProcessing.Prohibit,
-                XmlResolver = null,
-                IgnoreWhitespace = true,
-                IgnoreComments = true,
-            };
-            using var reader = XmlReader.Create(new StringReader(xml), settings);
-            // NOTE: don't combine `while(reader.Read())` with `ReadElementContentAsString()` —
-            // the latter advances past EndElement on its own, so a subsequent Read() in the loop
-            // header skips the next node entirely. Drive the reader manually instead.
-            reader.MoveToContent();
-            while (!reader.EOF)
-            {
-                if (reader.NodeType == XmlNodeType.Element)
-                {
-                    if (reader.LocalName == "errorCode")
-                    {
-                        var v = reader.ReadElementContentAsString();
-                        // CA1806: deliberate — `errorCode` defaults to 0 on parse failure,
-                        // and the outer `return errorCode != 0` check is the success gate
-                        // (a parse-failed errorCode of 0 is correctly treated as "not a UPnPError").
-                        _ = int.TryParse(v, out errorCode);
-                        continue;
-                    }
-                    if (reader.LocalName == "errorDescription")
-                    {
-                        errorDescription = reader.ReadElementContentAsString();
-                        continue;
-                    }
-                }
-                reader.Read();
-            }
-            return errorCode != 0;
-        }
-        catch
-        {
-            return false;
         }
     }
 
