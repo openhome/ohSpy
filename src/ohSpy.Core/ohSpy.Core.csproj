@@ -8,6 +8,8 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
     <!-- Story 1.5: DiagnosticEmitter takes ILogger<DiagnosticEmitter>. Version pinned in Directory.Packages.props. -->
     <PackageReference Include="Microsoft.Extensions.Logging" />
+    <!-- Story 2.5: MVVM source-gen for ViewModels (ObservableObject, ObservableProperty, RelayCommand). Version pinned in Directory.Packages.props at 8.4.0. Core is platform-independent; CommunityToolkit.Mvvm targets net standard — no WinUI dependency, NetArchTest boundary still holds. -->
+    <PackageReference Include="CommunityToolkit.Mvvm" />
   </ItemGroup>
 
   <ItemGroup>

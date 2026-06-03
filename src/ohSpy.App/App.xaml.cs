@@ -1,33 +1,19 @@
-using Windows.ApplicationModel;
-using Windows.ApplicationModel.Activation;
-using Windows.Foundation;
-using Windows.Foundation.Collections;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Data;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Navigation;
-using Microsoft.UI.Xaml.Shapes;
 using ohSpy.App.Composition;
 using ohSpy.Core.Devices;
 using ohSpy.Core.Diagnostics;
-using ohSpy.Core.Discovery;
 using ohSpy.Core.Threading;
+using ohSpy.Core.ViewModels;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
 
 namespace ohSpy.App;
 
-/// <summary>
-/// Provides application-specific behavior to supplement the default Application class.
-/// </summary>
 // CA1001: App owns the app-lifetime disposables _appCts (CancellationTokenSource) and
-// _adapterScope (IAsyncDisposable) per Decision 7. WinUI's Application base exposes no
-// IDisposable contract for the framework to invoke, and _adapterScope is async-disposable
+// _shellVm (IAsyncDisposable) per Decision 7. WinUI's Application base exposes no
+// IDisposable contract for the framework to invoke, and _shellVm is async-disposable
 // (a synchronous Dispose would violate Pattern 6's no-blocking-on-async rule). Deterministic
 // teardown happens in OnWindowClosed → ShutdownAsync instead.
 [System.Diagnostics.CodeAnalysis.SuppressMessage(
@@ -47,10 +33,10 @@ public partial class App : Application
     private readonly CancellationTokenSource _appCts = new();
 
     /// <summary>
-    /// The active adapter scope (Story 2.2). Interim home — Story 2.5 relocates its
-    /// construction into <c>ShellViewModel</c>. Null until <see cref="OnLaunched"/>.
+    /// The shell view model (Story 2.5). Owns the AdapterScope lifetime (Amendment A26).
+    /// Null until <see cref="OnLaunched"/>.
     /// </summary>
-    private AdapterScope? _adapterScope;
+    private ShellViewModel? _shellVm;
 
     /// <summary>
     /// Initializes the singleton application object.  This is the first line of authored code
@@ -95,44 +81,14 @@ public partial class App : Application
         // wiring lands in 2.4). Also validates the full DI graph resolves with no cycle.
         _ = Services.GetRequiredService<EagerDescriptionDispatcher>();
 
-        // Story 2.2: construct the adapter scope (Decision 7 adapter level) and bind the
-        // SSDP transport to the launch-default adapter (FR-048 + FR-004). Interim home —
-        // Story 2.5 relocates this into ShellViewModel.
-        var diag = Services.GetRequiredService<IDiagnosticEmitter>();
-        _adapterScope = new AdapterScope(
-            Services.GetRequiredService<INetworkAdapterEnumerator>(),
-            Services.GetRequiredService<ISsdpTransport>(),
-            diag,
-            _appCts.Token);
-        _ = StartAdapterScopeAsync(_adapterScope, diag);
+        // Story 2.5: resolve ShellViewModel (owns AdapterScope — Amendment A26 migration).
+        // Fire-and-forget StartAsync; exceptions handled inside ShellViewModel.RunStartAsync.
+        _shellVm = Services.GetRequiredService<ShellViewModel>();
+        _ = _shellVm.StartAsync(_appCts.Token);
 
-        _window = new MainWindow();
+        _window = new MainWindow(_shellVm);
         _window.Closed += OnWindowClosed;
         _window.Activate();
-    }
-
-    /// <summary>
-    /// Clean shutdown on window close. Sync handler (the <c>Window.Closed</c> delegate
-    /// returns void) that fire-and-forgets the async teardown — avoids <c>async void</c>
-    /// (VSTHRD100) while still awaiting the FR-050-budgeted scope disposal.
-    /// </summary>
-    /// <summary>
-    /// Runs <see cref="AdapterScope.StartAsync"/> and emits a diagnostic if the transport
-    /// bind throws (e.g. SocketException on port 1900). The zero-adapter path is already
-    /// handled inside StartAsync; this wrapper covers transport-level failures.
-    /// </summary>
-    private static async Task StartAdapterScopeAsync(AdapterScope scope, IDiagnosticEmitter diag)
-    {
-        try
-        {
-            await scope.StartAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            diag.Warning(DiagCategories.AdapterSwitch,
-                "adapter startup failed — no SSDP traffic",
-                new DiagnosticContext { ErrorText = ex.Message });
-        }
     }
 
     private void OnWindowClosed(object sender, WindowEventArgs args)
@@ -149,10 +105,8 @@ public partial class App : Application
         // directly (DiscoveryService, GENA) observe cancellation promptly.
         await _appCts.CancelAsync();
 
-        if (_adapterScope is not null)
-        {
-            await _adapterScope.DisposeAsync();
-        }
+        if (_shellVm is not null)
+            await _shellVm.DisposeAsync().ConfigureAwait(false);
 
         _appCts.Dispose();
     }

@@ -4,9 +4,9 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:local="using:ohSpy.App"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    Title="ohSpy.App"
+    xmlns:vm="using:ohSpy.Core.ViewModels"
+    Title="ohSpy"
     mc:Ignorable="d">
     <Window.SystemBackdrop>
         <MicaBackdrop />
@@ -18,17 +18,97 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TitleBar x:Name="AppTitleBar" Title="ohSpy.App">
+        <TitleBar x:Name="AppTitleBar" Title="ohSpy">
             <TitleBar.IconSource>
                 <ImageIconSource ImageSource="Assets/AppIcon.ico" />
             </TitleBar.IconSource>
         </TitleBar>
 
-        <!--
-            The Frame hosts pages for your application content. Add your UI to
-            MainPage.xaml rather than here so you can use Page features such as
-            navigation events and the Loaded lifecycle.
-        -->
-        <Frame x:Name="RootFrame" Grid.Row="1" />
+        <!-- FR-001: Two-pane shell. Left: device tree. Right: SSDP log (Story 2.7 fills it). -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300" MinWidth="200" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left pane: device tree (FR-001 + FR-002) -->
+            <TreeView
+                Grid.Column="0"
+                ItemsSource="{x:Bind ViewModel.DeviceTree.Devices, Mode=OneWay}"
+                SelectionMode="Single">
+
+                <!-- ItemContainerStyle sets Children binding for nested nodes (classic Binding for style setter — x:Bind doesn't work in Style.Setter in WinUI 3) -->
+                <TreeView.ItemContainerStyle>
+                    <Style TargetType="TreeViewItem">
+                        <Setter Property="ItemsSource" Value="{Binding Children}" />
+                    </Style>
+                </TreeView.ItemContainerStyle>
+
+                <!-- DataTemplateSelector handles DeviceNodeViewModel vs placeholder/error children -->
+                <TreeView.ItemTemplateSelector>
+                    <local:NodeDataTemplateSelector
+                        xmlns:local="using:ohSpy.App.Converters">
+                        <local:NodeDataTemplateSelector.DeviceTemplate>
+                            <DataTemplate x:DataType="vm:DeviceNodeViewModel">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Kind glyph (FR-045): Segoe MDL2 Assets U+E703 "Network" -->
+                                    <FontIcon
+                                        Grid.Column="0" Grid.RowSpan="2"
+                                        VerticalAlignment="Center"
+                                        Margin="0,0,8,0"
+                                        FontFamily="Segoe MDL2 Assets"
+                                        FontSize="16"
+                                        Glyph="{x:Bind KindGlyph}" />
+
+                                    <!-- Primary text: FriendlyName (FR-009) -->
+                                    <TextBlock
+                                        Grid.Column="1" Grid.Row="0"
+                                        Text="{x:Bind FriendlyName, Mode=OneWay}"
+                                        TextTrimming="CharacterEllipsis" />
+
+                                    <!-- Secondary detail: DeviceTypeTail · host:port (FR-051) -->
+                                    <TextBlock
+                                        Grid.Column="1" Grid.Row="1"
+                                        Text="{x:Bind SecondaryDetail, Mode=OneWay}"
+                                        FontSize="11"
+                                        Foreground="{StaticResource MutedForegroundBrush}"
+                                        TextTrimming="CharacterEllipsis" />
+                                </Grid>
+                            </DataTemplate>
+                        </local:NodeDataTemplateSelector.DeviceTemplate>
+
+                        <local:NodeDataTemplateSelector.FallbackTemplate>
+                            <DataTemplate x:DataType="vm:INodeViewModel">
+                                <TextBlock
+                                    Text="{x:Bind Label, Mode=OneWay}"
+                                    Foreground="{StaticResource MutedForegroundBrush}"
+                                    FontStyle="Italic" />
+                            </DataTemplate>
+                        </local:NodeDataTemplateSelector.FallbackTemplate>
+                    </local:NodeDataTemplateSelector>
+                </TreeView.ItemTemplateSelector>
+            </TreeView>
+
+            <!-- Right pane: placeholder for SSDP log (Story 2.7) -->
+            <Border
+                Grid.Column="1"
+                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                BorderThickness="1,0,0,0">
+                <TextBlock
+                    Text="SSDP log — Story 2.7"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Foreground="{StaticResource MutedForegroundBrush}" />
+            </Border>
+        </Grid>
     </Grid>
 </Window>

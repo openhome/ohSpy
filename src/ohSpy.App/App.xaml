@@ -10,7 +10,8 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
                 <!-- Other merged dictionaries here -->
             </ResourceDictionary.MergedDictionaries>
-            <!-- Other app resources here -->
+            <!-- Pattern 13: App-level brush resource for secondary/muted text (NFR-UI2) -->
+            <SolidColorBrush x:Key="MutedForegroundBrush" Color="#FF767676" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

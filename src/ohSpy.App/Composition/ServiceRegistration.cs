@@ -9,6 +9,7 @@ using ohSpy.Core.Discovery;
 using ohSpy.Core.Http;
 using ohSpy.Core.Scpd;
 using ohSpy.Core.Threading;
+using ohSpy.Core.ViewModels;
 
 /// <summary>
 /// Single composition root for the App. Future stories add their service registrations
@@ -86,6 +87,17 @@ internal static class ServiceRegistration
         // EntryNeedsFetch in its ctor — pinned at startup in App.OnLaunched to wire the
         // subscription. No consumer feeds the registry until DiscoveryService (Story 2.4).
         services.AddSingleton<EagerDescriptionDispatcher>();
+
+        // Story 2.4 — SSDP parser + discovery service.
+        // SsdpParser is internal; registered as concrete so DiscoveryService can receive it.
+        services.AddSingleton<SsdpParser>();
+        services.AddSingleton<DiscoveryService>();
+        services.AddSingleton<IDiscoveryService>(sp => sp.GetRequiredService<DiscoveryService>());
+
+        // Story 2.5 — Main window shell ViewModel. Singleton: one window, one ShellViewModel.
+        // ShellViewModel owns the AdapterScope lifetime (Amendment A26 migration from App.xaml.cs).
+        // DeviceTreeViewModel is constructed by ShellViewModel, not registered separately.
+        services.AddSingleton<ShellViewModel>();
 
         return services;
     }

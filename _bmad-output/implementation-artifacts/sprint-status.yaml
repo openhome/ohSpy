@@ -36,7 +36,14 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-06-01
-last_updated: 2026-06-02
+last_updated: 2026-06-03
+# 2026-06-03: Story 2.5 moved review → done by code-review workflow (claude-opus-4-8). APPROVED-WITH-MINOR-FIXES. 5 patches applied (OnDeviceLoaded duplicate-UUID guard; ShellViewModel _runTask stored + awaited in DisposeAsync + IDiscoveryService drained; StartAsync Interlocked re-entrancy guard; DeviceTreeViewModel IDisposable unsubscribe; ComputeSecondaryDetail empty-tail + port<0 guards) + 3 regression tests (247→250 passing, 2 skips, chaos 1). KindGlyph "empty" finding was a FALSE POSITIVE — glyph U+E703 + FR-051 U+00B7 + Loading U+2026 were correctly UTF-8 all along; the mojibake signal was a Windows PowerShell 5.1 Get-Content ANSI-default artifact. 1 item deferred to Story 2.6 (ReplaceWith Reset collapses expansion).
+# 2026-06-03: Story 2.5 moved in-progress → review by dev-story workflow (claude-sonnet-4-6). 18 tests (229→247 passing, 2 skips unchanged), build 0 errors (1 benign WMC1506 XAML warning), chaos suite unchanged at 1, CoreAppBoundaryTests green. CommunityToolkit.Mvvm 8.4.0 added; 7 ViewModels (NodeKind/INodeViewModel/placeholders/DeviceNodeViewModel/DeviceTreeViewModel/ShellViewModel); AdapterScope migrated from App.xaml.cs (Amendment A26); MainWindow shell with TreeView; MainPage deleted.
+# 2026-06-03: Story 2.5 context created via bmad-create-story (claude-sonnet-4-6); backlog → ready-for-dev. Main window shell + DeviceTreeViewModel + ShellViewModel + AdapterScope migration (A26). Key design notes: CommunityToolkit.Mvvm 8.4.0 added to ohSpy.Core; ShellViewModel owns AdapterScope (moved from App.xaml.cs per A26); x:Bind requires typed ViewModel property on code-behind (not DataContext); NodeDataTemplateSelector needed for heterogeneous TreeView items; TreeView.ItemContainerStyle uses classic Binding (not x:Bind) for Children; DeviceUpdated uses Update(vm) not Remove+Add (FR-054 Move semantics).
+# 2026-06-03: Story 2.4 moved review → done by Sonnet code-review (bmad-code-review). APPROVED-WITH-MINOR-FIXES. 1 patch: bare LF line endings normalised in SsdpParser (Replace CRLF→LF before split). 11 deferred items logged.
+# 2026-06-02: Story 2.4 moved in-progress → review by dev-story workflow (claude-sonnet-4-6). 28 tests (201→229 passing, +2 skips unchanged), build 0 warnings, chaos suite unchanged at 1. SsdpAnnouncement + SsdpParser + IDiscoveryService/DiscoveryService + DI + App startup wired.
+# 2026-06-02: Story 2.4 moved ready-for-dev → in-progress by dev-story workflow (claude-sonnet-4-6).
+# 2026-06-02: Story 2.4 context created via bmad-create-story (claude-sonnet-4-6); backlog → ready-for-dev. SsdpParser + DiscoveryService + ChannelSsdpTransport fake. Key design notes: M-SEARCH responses use ST not NT (effectiveNt = ann.NT ?? ann.ST for routing); DiscoveryService must start AFTER scope.StartAsync(); adapterToken threaded into OnAlive for D7 device CTS; FakeSsdpTransport (cap=1) NOT suitable for DiscoveryService integration tests — ChannelSsdpTransport (cap=256) created instead.
 # 2026-06-02: Story 2.3 moved review → done by Sonnet code-review (bmad-code-review). APPROVED-WITH-MINOR-FIXES. 2 patches: DeviceCts.Dispose() in RemoveCore + DeviceToken snapshotted at construction; MarkInFlight Post guarded against cancelled token.
 # 2026-06-02: Story 2.3 moved in-progress → review by dev-story workflow (claude-opus-4-8[1m]). 36 tests (165→199 passing, +2 skips), build 0 warnings, chaos suite unchanged at 1, DI graph cycle-free. Also fixed a pre-existing flaky allocation test (process-wide → thread-local GC). A27/A28 (D9 stale snippets) + A29 (allocation-test robustness) amendment candidates raised.
 # 2026-06-02: Story 2.3 moved ready-for-dev → in-progress by dev-story workflow (claude-opus-4-8[1m]).
@@ -90,8 +97,8 @@ development_status:
   2-1-ssdp-transport-multicast-search-sockets-with-bounded-channel: done
   2-2-network-adapter-enumerator-adapter-scope-startup-bind: done
   2-3-device-registry-descriptionfetchstate-machine-eager-description-dispatcher: done
-  2-4-ssdp-parser-discoveryservice-wire-transport-into-registry: backlog
-  2-5-main-window-shell-device-tree-top-level-rows: backlog
+  2-4-ssdp-parser-discoveryservice-wire-transport-into-registry: done
+  2-5-main-window-shell-device-tree-top-level-rows: done
   2-6-service-action-expansion-lazy-scpd-incremental: backlog
   2-7-ssdp-message-log-right-pane-virtualised-smart-auto-follow: backlog
   2-8-right-click-context-menus-xml-viewing-in-default-browser: backlog
