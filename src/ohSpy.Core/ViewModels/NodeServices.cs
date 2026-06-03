@@ -3,6 +3,7 @@ namespace ohSpy.Core.ViewModels;
 using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Http;
 using ohSpy.Core.Scpd;
+using ohSpy.Core.Shell;
 using ohSpy.Core.Threading;
 
 /// <summary>
@@ -16,4 +17,5 @@ public sealed record NodeServices(
     IUpnpHttpClient Http,
     IScpdParser ScpdParser,
     IUiDispatcher Ui,
-    IDiagnosticEmitter Diag);
+    IDiagnosticEmitter Diag,
+    IUriLauncher Launcher); // Story 2.8 — context-menu shell-open seam

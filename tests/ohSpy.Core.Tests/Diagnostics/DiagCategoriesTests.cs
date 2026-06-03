@@ -60,6 +60,8 @@ public class DiagCategoriesTests
             "AdapterSwitch", "AdapterSwitchTimeout",
             // Diagnostics infrastructure
             "DiagnosticsFileSinkUnavailable",
+            // XML viewing / shell-open (Story 2.8)
+            "ShellExecute", "FeatureNotImplemented",
         };
 
         var actualNames = GetConstantFields().Select(f => f.Name).ToArray();

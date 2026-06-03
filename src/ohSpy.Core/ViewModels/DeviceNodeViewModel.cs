@@ -2,7 +2,9 @@ namespace ohSpy.Core.ViewModels;
 
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using ohSpy.Core.Devices;
+using ohSpy.Core.Diagnostics;
 
 public partial class DeviceNodeViewModel : ObservableObject, INodeViewModel
 {
@@ -69,6 +71,23 @@ public partial class DeviceNodeViewModel : ObservableObject, INodeViewModel
             Children.Add(child);
         // Clear+Add emits Reset; acceptable for placeholder->real-children swap (A1 atomic rule).
     }
+
+    // AC-2.8.2/2.8.3: open the device description (LocationUrl) in the default browser.
+    // Whitelist + warn-on-failure live in the shared BrowserLaunch helper. Synchronous void —
+    // shell-execute is fire-and-forget (AC-2.8.6), no async readback.
+    [RelayCommand]
+    private void FetchXml() =>
+        BrowserLaunch.OpenInDefaultBrowser(
+            _entry.LocationUrl, _services.Launcher, _services.Diag, _entry.Uuid);
+
+    // STUB — AC-2.8.1 surfaces the "Properties…" item; the read-only Properties window is
+    // delivered in Story 2.9, which replaces this body (and may relocate the command to the
+    // App layer, since opening a Window is not a Core concern). Until then: warn, do not crash.
+    [RelayCommand]
+    private void OpenProperties() =>
+        _services.Diag.Warning(DiagCategories.FeatureNotImplemented,
+            "Properties window not yet implemented (Story 2.9)",
+            new DiagnosticContext { DeviceUuid = _entry.Uuid });
 
     // FR-051: secondary detail is "<deviceTypeTail> <U+00B7 middle-dot> <host>:<port>".
     // Degenerate device metadata is guarded: an empty type tail drops the separator, and an

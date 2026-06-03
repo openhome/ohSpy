@@ -2,6 +2,7 @@ namespace ohSpy.Core.ViewModels;
 
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Http;
 using ohSpy.Core.Models;
@@ -138,6 +139,25 @@ public partial class ServiceNodeViewModel : ObservableObject, INodeViewModel
         Children.Clear();
         foreach (var child in newChildren) Children.Add(child);
     }
+
+    // AC-2.8.4: open the SCPD (resolved against the device LocationUrl, like LoadActionsAsync)
+    // in the default browser via the same shell-execute path + whitelist as the device case.
+    // Named FetchServiceXml (not the arch's shorthand FetchXml) to match the "Fetch service XML"
+    // menu label and read clearly next to the device's FetchXmlCommand.
+    [RelayCommand]
+    private void FetchServiceXml() =>
+        BrowserLaunch.OpenInDefaultBrowser(
+            new Uri(_deviceLocation, _service.ScpdUrl),
+            _services.Launcher, _services.Diag, _deviceUuid);
+
+    // STUB — AC-2.8.5. The real GENA subscribe handler lands in Epic 4 (Story 4.1). The menu
+    // item is visible+enabled and labelled "Subscribe (coming in Epic 4)"; choosing it emits a
+    // Warning so the action is observable in diagnostics. Story 4.1 removes this stub + relabel.
+    [RelayCommand]
+    private void Subscribe() =>
+        _services.Diag.Warning(DiagCategories.FeatureNotImplemented,
+            "subscribe not yet implemented",
+            new DiagnosticContext { DeviceUuid = _deviceUuid, ServiceId = _service.ServiceId });
 
     string INodeViewModel.Label => Label; // explicit impl returns the observable Label
 }

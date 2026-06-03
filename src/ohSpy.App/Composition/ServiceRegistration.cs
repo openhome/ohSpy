@@ -8,6 +8,7 @@ using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Discovery;
 using ohSpy.Core.Http;
 using ohSpy.Core.Scpd;
+using ohSpy.Core.Shell;
 using ohSpy.Core.Threading;
 using ohSpy.Core.ViewModels;
 
@@ -94,8 +95,11 @@ internal static class ServiceRegistration
         services.AddSingleton<DiscoveryService>();
         services.AddSingleton<IDiscoveryService>(sp => sp.GetRequiredService<DiscoveryService>());
 
+        // Story 2.8 — OS shell-open seam for the context-menu "Fetch XML" commands (FR-019/020).
+        services.AddSingleton<IUriLauncher, ShellUriLauncher>();
+
         // Story 2.6 — NodeServices bundle: the Core services the tree-node VMs need to lazily
-        // fetch + parse an SCPD on expand. All four members are already-registered singletons;
+        // fetch + parse an SCPD on expand. All members are already-registered singletons;
         // the bundle itself is a stateless singleton threaded into the VM graph by ShellViewModel.
         services.AddSingleton<NodeServices>();
 

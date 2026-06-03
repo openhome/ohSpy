@@ -100,4 +100,14 @@ public static class DiagCategories
     // ─── Diagnostics infrastructure (Story 1.5 own use) ────────────
     /// <summary>Mandatory context: ErrorText. Emitted by DiagnosticFileSink on startup failure.</summary>
     public const string DiagnosticsFileSinkUnavailable = "Diagnostics.FileSink.Unavailable";
+
+    // ─── XML viewing / shell-open (Story 2.8) ──────────────────────
+    /// <summary>Mandatory context: Url; DeviceUuid when known. Emitted when a context-menu
+    /// shell-open is refused (non-http(s) scheme) or fails (no default browser, etc.).</summary>
+    public const string ShellExecute = "Shell.Execute";
+
+    /// <summary>Mandatory context: (none beyond message). Temporary — emitted by the Story 2.8
+    /// Subscribe stub (removed in Story 4.1) and the Properties stub (replaced in Story 2.9).
+    /// A placeholder for menu items whose real handler lands in a later epic.</summary>
+    public const string FeatureNotImplemented = "Feature.NotImplemented";
 }

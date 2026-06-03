@@ -6,6 +6,7 @@ using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Http;
 using ohSpy.Core.Models;
 using ohSpy.Core.Scpd;
+using ohSpy.Core.Shell;
 using ohSpy.Core.Tests.Fakes;
 using ohSpy.Core.Threading;
 using ohSpy.Core.ViewModels;
@@ -35,8 +36,9 @@ public sealed class ServiceNodeViewModelTests
 
     private static NodeServices MakeNodeServices(
         StubUpnpHttpClient http, IScpdParser parser,
-        IUiDispatcher? ui = null, IDiagnosticEmitter? diag = null) =>
-        new(http, parser, ui ?? new InlineUiDispatcher(), diag ?? new CapturingDiagnosticEmitter());
+        IUiDispatcher? ui = null, IDiagnosticEmitter? diag = null, IUriLauncher? launcher = null) =>
+        new(http, parser, ui ?? new InlineUiDispatcher(), diag ?? new CapturingDiagnosticEmitter(),
+            launcher ?? new FakeUriLauncher());
 
     private static ServiceNodeViewModel NewVm(
         NodeServices services, ServiceDescription? service = null,
@@ -262,5 +264,58 @@ public sealed class ServiceNodeViewModelTests
         await WaitUntilAsync(() => captured is not null);
 
         captured.Should().Be(new Uri("http://host:49152/Foo/Scpd.xml"));
+    }
+
+    // ─── Story 2.8: context-menu commands (AC-2.8.4/2.8.5) ──────────────────────
+
+    [Fact]
+    [Trait("ac", "AC-2.8.4")]
+    public void FetchServiceXmlCommand_ResolvesRelativeScpdUrl_Launches_AC284()
+    {
+        var launcher = new FakeUriLauncher();
+        var services = MakeNodeServices(new StubUpnpHttpClient(), new StubScpdParser(), launcher: launcher);
+        var vm = NewVm(services,
+            service: Service(scpdUrl: "/RC/Scpd.xml"),
+            location: new Uri("http://192.168.1.100:49152/desc.xml"));
+
+        vm.FetchServiceXmlCommand.Execute(null);
+
+        launcher.Launched.Should().ContainSingle()
+            .Which.Should().Be(new Uri("http://192.168.1.100:49152/RC/Scpd.xml"));
+    }
+
+    [Fact]
+    [Trait("ac", "AC-2.8.4")]
+    public void FetchServiceXmlCommand_AbsoluteScpdUrl_PassesThrough_AC284()
+    {
+        var launcher = new FakeUriLauncher();
+        var services = MakeNodeServices(new StubUpnpHttpClient(), new StubScpdParser(), launcher: launcher);
+        var vm = NewVm(services,
+            service: Service(scpdUrl: "http://10.0.0.5/scpd.xml"),
+            location: new Uri("http://192.168.1.100:49152/desc.xml"));
+
+        vm.FetchServiceXmlCommand.Execute(null);
+
+        launcher.Launched.Should().ContainSingle()
+            .Which.Should().Be(new Uri("http://10.0.0.5/scpd.xml"));
+    }
+
+    [Fact]
+    [Trait("ac", "AC-2.8.5")]
+    public void SubscribeCommand_Stub_WarnsNotImplemented_AC285()
+    {
+        var launcher = new FakeUriLauncher();
+        var diag = new CapturingDiagnosticEmitter();
+        var services = MakeNodeServices(new StubUpnpHttpClient(), new StubScpdParser(),
+            diag: diag, launcher: launcher);
+        var vm = NewVm(services);
+
+        var act = () => vm.SubscribeCommand.Execute(null);
+
+        act.Should().NotThrow();
+        launcher.Launched.Should().BeEmpty();
+        var warning = diag.Entries.Should().ContainSingle().Which;
+        warning.Category.Should().Be(DiagCategories.FeatureNotImplemented);
+        warning.Message.Should().Be("subscribe not yet implemented");
     }
 }

@@ -61,6 +61,16 @@
                                         <RowDefinition Height="Auto" />
                                     </Grid.RowDefinitions>
 
+                                    <!-- Right-click context menu (FR-017 / FR-052): x:Bind to VM commands (Pattern 13) -->
+                                    <Grid.ContextFlyout>
+                                        <MenuFlyout>
+                                            <MenuFlyoutItem Text="Fetch description XML"
+                                                            Command="{x:Bind FetchXmlCommand}" />
+                                            <MenuFlyoutItem Text="Properties&#x2026;"
+                                                            Command="{x:Bind OpenPropertiesCommand}" />
+                                        </MenuFlyout>
+                                    </Grid.ContextFlyout>
+
                                     <!-- Kind glyph (FR-045): Segoe MDL2 Assets U+E703 "Network" -->
                                     <FontIcon
                                         Grid.Column="0" Grid.RowSpan="2"
@@ -90,6 +100,15 @@
                         <local:NodeDataTemplateSelector.ServiceTemplate>
                             <DataTemplate x:DataType="vm:ServiceNodeViewModel">
                                 <StackPanel Orientation="Horizontal">
+                                    <!-- Right-click context menu (FR-018 / FR-020): x:Bind to VM commands (Pattern 13) -->
+                                    <StackPanel.ContextFlyout>
+                                        <MenuFlyout>
+                                            <MenuFlyoutItem Text="Fetch service XML"
+                                                            Command="{x:Bind FetchServiceXmlCommand}" />
+                                            <MenuFlyoutItem Text="Subscribe (coming in Epic 4)"
+                                                            Command="{x:Bind SubscribeCommand}" />
+                                        </MenuFlyout>
+                                    </StackPanel.ContextFlyout>
                                     <FontIcon
                                         VerticalAlignment="Center" Margin="0,0,8,0"
                                         FontFamily="Segoe MDL2 Assets" FontSize="14"
