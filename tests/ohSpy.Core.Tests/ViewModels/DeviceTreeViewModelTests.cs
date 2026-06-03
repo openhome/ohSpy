@@ -25,7 +25,7 @@ public sealed class DeviceTreeViewModelTests : IDisposable
         _registry = new DeviceRegistry(_ui);
         _nodeServices = new NodeServices(
             new StubUpnpHttpClient(), new StubScpdParser(), _ui, new CapturingDiagnosticEmitter(),
-            new FakeUriLauncher(), new FakePropertiesLauncher());
+            new FakeUriLauncher(), new FakePropertiesLauncher(), new FakeInvocationPopupLauncher());
         _vm = new DeviceTreeViewModel(_registry, _ui, _nodeServices);
     }
 

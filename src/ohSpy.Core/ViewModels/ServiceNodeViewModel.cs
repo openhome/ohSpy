@@ -3,6 +3,7 @@ namespace ohSpy.Core.ViewModels;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ohSpy.Core.Devices;
 using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Http;
 using ohSpy.Core.Models;
@@ -14,6 +15,9 @@ public partial class ServiceNodeViewModel : ObservableObject, INodeViewModel
     private readonly Guid _deviceUuid;       // for the FR-041 Identity column on diagnostics
     private readonly CancellationToken _deviceToken; // D7 device-level cancellation (byebye/adapter switch)
     private readonly NodeServices _services;
+    // Story 3.2: the device entry, threaded DeviceNode → ServiceNode → ActionNode so the action
+    // leaf can hand LocationUrl + Uuid + DeviceToken to the invocation popup in one object.
+    private readonly RegistryEntry _parentEntry;
 
     private int _loadStarted; // 0 = not started, 1 = started (Interlocked guard — AC-2.6.6)
 
@@ -32,12 +36,13 @@ public partial class ServiceNodeViewModel : ObservableObject, INodeViewModel
     // CancellationToken is last per CA1068 / Dev Notes Pattern 6 ("deviceToken, passed last").
     public ServiceNodeViewModel(
         ServiceDescription service, Uri deviceLocation, Guid deviceUuid,
-        NodeServices services, CancellationToken deviceToken)
+        RegistryEntry parentEntry, NodeServices services, CancellationToken deviceToken)
     {
         _service = service;
         _deviceLocation = deviceLocation;
         _deviceUuid = deviceUuid;
         _deviceToken = deviceToken;
+        _parentEntry = parentEntry;
         _services = services;
         Label = ComputeLabel(service);
         Children.Add(new LoadingPlaceholderViewModel()); // AC-A1.2: force expand chevron
@@ -102,7 +107,7 @@ public partial class ServiceNodeViewModel : ObservableObject, INodeViewModel
             await foreach (var action in _services.ScpdParser
                 .StreamActionsAsync(stream, _deviceToken).ConfigureAwait(false))
             {
-                var node = new ActionNodeViewModel(action);
+                var node = new ActionNodeViewModel(action, _service, _parentEntry, _services);
                 if (first)
                 {
                     first = false;

@@ -2,6 +2,7 @@ namespace ohSpy.Core.Tests.ViewModels;
 
 using System.Diagnostics;
 using FluentAssertions;
+using ohSpy.Core.Devices;
 using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Http;
 using ohSpy.Core.Models;
@@ -37,14 +38,21 @@ public sealed class ServiceNodeViewModelTests
     private static NodeServices MakeNodeServices(
         StubUpnpHttpClient http, IScpdParser parser,
         IUiDispatcher? ui = null, IDiagnosticEmitter? diag = null, IUriLauncher? launcher = null,
-        IPropertiesLauncher? propertiesLauncher = null) =>
+        IPropertiesLauncher? propertiesLauncher = null,
+        IInvocationPopupLauncher? invocationPopupLauncher = null) =>
         new(http, parser, ui ?? new InlineUiDispatcher(), diag ?? new CapturingDiagnosticEmitter(),
-            launcher ?? new FakeUriLauncher(), propertiesLauncher ?? new FakePropertiesLauncher());
+            launcher ?? new FakeUriLauncher(), propertiesLauncher ?? new FakePropertiesLauncher(),
+            invocationPopupLauncher ?? new FakeInvocationPopupLauncher());
+
+    // Story 3.2: ServiceNodeViewModel now takes the device RegistryEntry (threaded to ActionNodes).
+    private static RegistryEntry Entry(Uri? location = null) =>
+        new(DeviceUuid, location ?? DeviceLocation, DateTime.UtcNow, CancellationToken.None);
 
     private static ServiceNodeViewModel NewVm(
         NodeServices services, ServiceDescription? service = null,
         Uri? location = null, CancellationToken deviceToken = default) =>
-        new(service ?? Service(), location ?? DeviceLocation, DeviceUuid, services, deviceToken);
+        new(service ?? Service(), location ?? DeviceLocation, DeviceUuid,
+            Entry(location), services, deviceToken);
 
     private static async Task WaitUntilAsync(Func<bool> condition, int timeoutMs = 2000)
     {

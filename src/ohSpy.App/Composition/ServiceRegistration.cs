@@ -112,6 +112,22 @@ internal static class ServiceRegistration
         services.AddSingleton<PropertiesLauncher>();
         services.AddSingleton<IPropertiesLauncher>(sp => sp.GetRequiredService<PropertiesLauncher>());
 
+        // Story 3.2 — invocation popup (FR-025). Same shape as the 2.9 Properties launcher block.
+        // Registered BEFORE the NodeServices line so IInvocationPopupLauncher auto-resolves into the
+        // bundle. Pattern 7: a named factory delegate (no IServiceProvider leak at the call site).
+        services.AddSingleton<InvocationPopupViewModelFactory>(sp =>
+            (action, parentService, parentEntry) => new InvocationPopupViewModel(
+                action,
+                parentService,
+                parentEntry,
+                sp.GetRequiredService<IUpnpHttpClient>(),
+                sp.GetRequiredService<IUiDispatcher>(),
+                sp.GetRequiredService<IDiagnosticEmitter>(),
+                sp.GetRequiredService<IDeviceRegistry>()));
+        // Concrete + interface (dual reg) so OnLaunched can set ShellWindow.
+        services.AddSingleton<InvocationPopupLauncher>();
+        services.AddSingleton<IInvocationPopupLauncher>(sp => sp.GetRequiredService<InvocationPopupLauncher>());
+
         // Story 2.6 — NodeServices bundle: the Core services the tree-node VMs need to lazily
         // fetch + parse an SCPD on expand. All members are already-registered singletons;
         // the bundle itself is a stateless singleton threaded into the VM graph by ShellViewModel.

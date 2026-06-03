@@ -58,7 +58,7 @@ public partial class DeviceNodeViewModel : ObservableObject, INodeViewModel
         var services = _entry.Description?.Services ?? [];
         var nodes = services
             .Select(s => (INodeViewModel)new ServiceNodeViewModel(
-                s, _entry.LocationUrl, _entry.Uuid, _services, _entry.DeviceToken))
+                s, _entry.LocationUrl, _entry.Uuid, _entry, _services, _entry.DeviceToken))
             .ToList();
         ReplaceWith(nodes); // single Reset — AC-A1.4
     }

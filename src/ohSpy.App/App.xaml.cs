@@ -91,6 +91,8 @@ public partial class App : Application
         // Story 2.9: give the Properties-popup launcher its FR-046 parent (the MainWindow is
         // created here, not in DI, so the shell window is injected post-construction).
         Services.GetRequiredService<PropertiesLauncher>().ShellWindow = _window;
+        // Story 3.2: same FR-046 parent injection for the invocation-popup launcher.
+        Services.GetRequiredService<InvocationPopupLauncher>().ShellWindow = _window;
         _window.Closed += OnWindowClosed;
         _window.Activate();
     }

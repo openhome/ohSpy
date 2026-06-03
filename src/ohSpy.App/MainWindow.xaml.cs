@@ -120,6 +120,16 @@ public sealed partial class MainWindow : Window
     private void OnTreeDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
         var item = (e.OriginalSource as FrameworkElement)?.DataContext;
+
+        // Story 3.2 (AC-3.2.4 #14): double-clicking an ACTION row opens the invocation popup.
+        // Actions are leaves (no expansion to toggle) — route straight to the command. Same
+        // null-DataContext-safe item lookup as the expand branch (WinUI TreeView quirk).
+        if (item is ActionNodeViewModel act)
+        {
+            act.OpenInvocationPopupCommand.Execute(null);
+            return;
+        }
+
         if (item is DeviceNodeViewModel or ServiceNodeViewModel &&
             DeviceTreeView.ContainerFromItem(item) is TreeViewItem container)
         {

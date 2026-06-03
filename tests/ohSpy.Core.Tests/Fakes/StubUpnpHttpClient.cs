@@ -64,8 +64,26 @@ internal sealed class StubUpnpHttpClient : IUpnpHttpClient
         return await ScpdResponder(scpdUrl, ct).ConfigureAwait(false);
     }
 
-    public Task<SoapResponse> InvokeActionAsync(SoapRequest request, CancellationToken ct) =>
-        throw new NotSupportedException();
+    private readonly List<SoapRequest> _invoked = new();
+
+    /// <summary>SOAP requests passed to <see cref="InvokeActionAsync"/>, in call order. Tests assert
+    /// on the request that WENT OUT (resolved absolute ControlUrl, args 1:1) — Epic 2 lesson.</summary>
+    public IReadOnlyList<SoapRequest> InvokedRequests
+    {
+        get { lock (_gate) { return _invoked.ToArray(); } }
+    }
+
+    /// <summary>Supplies the invoke result. Default: throws NotSupportedException so tests that don't
+    /// opt in fail loudly if the path is hit. A test can return a <see cref="SoapResponse"/>, throw a
+    /// typed UpnpException, or block on the token (await Task.Delay(Infinite, ct)) to test cancel.</summary>
+    public Func<SoapRequest, CancellationToken, Task<SoapResponse>>? InvokeResponder { get; set; }
+
+    public async Task<SoapResponse> InvokeActionAsync(SoapRequest request, CancellationToken ct)
+    {
+        lock (_gate) { _invoked.Add(request); }
+        if (InvokeResponder is null) throw new NotSupportedException();
+        return await InvokeResponder(request, ct).ConfigureAwait(false);
+    }
 
     public Task<SubscribeResponse> SubscribeAsync(
         Uri eventSubUrl, Uri callbackUrl, TimeSpan requestedTimeout, CancellationToken ct) =>
