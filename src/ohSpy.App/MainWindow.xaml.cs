@@ -1,6 +1,8 @@
+using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using ohSpy.Core.ViewModels;
 
 namespace ohSpy.App;
@@ -31,6 +33,103 @@ public sealed partial class MainWindow : Window
         // so these subscriptions need no explicit teardown.
         LogScrollViewer.ViewChanged += OnLogViewChanged;
         ViewModel.SsdpLog.Entries.CollectionChanged += OnLogEntriesChanged;
+
+        // Assign each TreeViewItem's child ItemsSource from its node's Children as containers
+        // realize (see XAML note: WinUI leaves the container DataContext null, so the declarative
+        // binding can't). LayoutUpdated fires after each realization pass; the assignment is
+        // coalesced and idempotent so it settles after one pass per new container.
+        DeviceTreeView.LayoutUpdated += OnTreeLayoutUpdated;
+    }
+
+    private bool _assignPending;
+
+    // Children of an expandable node (device → services, service → actions); null for leaves.
+    private static ObservableCollection<INodeViewModel>? NodeChildren(object? node) => node switch
+    {
+        DeviceNodeViewModel d => d.Children,
+        ServiceNodeViewModel s => s.Children,
+        _ => null,
+    };
+
+    private void OnTreeLayoutUpdated(object? sender, object e)
+    {
+        if (_assignPending)
+        {
+            return;
+        }
+
+        _assignPending = true;
+        // Defer off the layout pass so we never mutate container ItemsSource during layout.
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _assignPending = false;
+            AssignContainerSources(ViewModel.DeviceTree.Devices);
+        });
+    }
+
+    private void AssignContainerSources(System.Collections.IEnumerable nodes)
+    {
+        foreach (var node in nodes)
+        {
+            var children = NodeChildren(node);
+            if (children is null)
+            {
+                continue; // leaf — no chevron / children
+            }
+
+            // Only realized containers are returned (collapsed subtrees yield null) — so this
+            // recurses lazily, assigning each level's containers once they exist.
+            if (DeviceTreeView.ContainerFromItem(node) is TreeViewItem container)
+            {
+                if (container.ItemsSource is null)
+                {
+                    container.ItemsSource = children;
+                }
+
+                AssignContainerSources(children);
+            }
+        }
+    }
+
+    // ── Tree lazy-load + expand discoverability — view mechanics only, no business logic
+    //    (Pattern 13 documented exception, like the auto-follow handlers above). The Story 2.6
+    //    lazy load (build service list / fetch SCPD) hangs off the node VM's IsExpanded, which
+    //    nothing set from the UI. These element-level handlers (NOT style/template bindings,
+    //    which crashed against the null-DataContext containers) close that gap. ──
+
+    // Fires when the operator expands a row (chevron or programmatic). Set the node VM's
+    // IsExpanded to trigger OnIsExpandedChanged. Deferred via the dispatcher so we never mutate
+    // the bound Children collection synchronously inside the TreeView's expand pass.
+    private void OnTreeExpanding(TreeView sender, TreeViewExpandingEventArgs args)
+    {
+        switch (args.Item)
+        {
+            case DeviceNodeViewModel dev when !dev.IsExpanded:
+                DispatcherQueue.TryEnqueue(() => dev.IsExpanded = true);
+                break;
+            case ServiceNodeViewModel svc when !svc.IsExpanded:
+                DispatcherQueue.TryEnqueue(() => svc.IsExpanded = true);
+                break;
+        }
+    }
+
+    // Double-click a row to toggle its expansion (the chevron alone is easy to miss). Find the
+    // node's TreeViewItem container and flip IsExpanded — expanding raises OnTreeExpanding which
+    // drives the lazy load. Also re-asserts the container's ItemsSource as a safety net in case
+    // the ItemContainerStyle {Binding Children} did not resolve (null-DataContext container).
+    private void OnTreeDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        var item = (e.OriginalSource as FrameworkElement)?.DataContext;
+        if (item is DeviceNodeViewModel or ServiceNodeViewModel &&
+            DeviceTreeView.ContainerFromItem(item) is TreeViewItem container)
+        {
+            if (container.ItemsSource is null)
+            {
+                if (item is DeviceNodeViewModel dev) container.ItemsSource = dev.Children;
+                else if (item is ServiceNodeViewModel svc) container.ItemsSource = svc.Children;
+            }
+            container.IsExpanded = !container.IsExpanded;
+        }
     }
 
     private void OnLogViewChanged(object? sender, ScrollViewerViewChangedEventArgs e)

@@ -7,6 +7,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:ohSpy.Core.ViewModels"
     xmlns:m="using:ohSpy.Core.Models"
+    xmlns:conv="using:ohSpy.App.Converters"
     Title="ohSpy"
     mc:Ignorable="d">
     <Window.SystemBackdrop>
@@ -32,24 +33,24 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- Left pane: device tree (FR-001 + FR-002) -->
+            <!-- Left pane: device tree (FR-001 + FR-002). NOTE: WinUI 3 TreeView databinding leaves
+                 each generated TreeViewItem's DataContext null (confirmed via runtime inspection),
+                 so the usual ItemContainerStyle {Binding Children} never resolves and NO chevrons /
+                 children render (Story 2.5/2.6 gap, found in manual smoke). We therefore assign each
+                 container's ItemsSource in code from the node's Children as containers realize
+                 (OnTreeLayoutUpdated), which is the only mechanism that works here. OnTreeExpanding
+                 drives the Story 2.6 lazy load; OnTreeDoubleTapped expands on double-click. -->
             <TreeView
+                x:Name="DeviceTreeView"
                 Grid.Column="0"
                 ItemsSource="{x:Bind ViewModel.DeviceTree.Devices, Mode=OneWay}"
-                SelectionMode="Single">
+                SelectionMode="Single"
+                Expanding="OnTreeExpanding"
+                DoubleTapped="OnTreeDoubleTapped">
 
-                <!-- ItemContainerStyle sets Children binding for nested nodes (classic Binding for style setter — x:Bind doesn't work in Style.Setter in WinUI 3) -->
-                <TreeView.ItemContainerStyle>
-                    <Style TargetType="TreeViewItem">
-                        <Setter Property="ItemsSource" Value="{Binding Children}" />
-                    </Style>
-                </TreeView.ItemContainerStyle>
-
-                <!-- DataTemplateSelector handles DeviceNodeViewModel vs placeholder/error children -->
-                <TreeView.ItemTemplateSelector>
-                    <local:NodeDataTemplateSelector
-                        xmlns:local="using:ohSpy.App.Converters">
-                        <local:NodeDataTemplateSelector.DeviceTemplate>
+                <TreeView.Resources>
+                    <conv:NodeDataTemplateSelector x:Key="NodeTemplateSelector">
+                        <conv:NodeDataTemplateSelector.DeviceTemplate>
                             <DataTemplate x:DataType="vm:DeviceNodeViewModel">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -95,9 +96,9 @@
                                         TextTrimming="CharacterEllipsis" />
                                 </Grid>
                             </DataTemplate>
-                        </local:NodeDataTemplateSelector.DeviceTemplate>
+                        </conv:NodeDataTemplateSelector.DeviceTemplate>
 
-                        <local:NodeDataTemplateSelector.ServiceTemplate>
+                        <conv:NodeDataTemplateSelector.ServiceTemplate>
                             <DataTemplate x:DataType="vm:ServiceNodeViewModel">
                                 <StackPanel Orientation="Horizontal">
                                     <!-- Right-click context menu (FR-018 / FR-020): x:Bind to VM commands (Pattern 13) -->
@@ -118,9 +119,9 @@
                                         TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
                             </DataTemplate>
-                        </local:NodeDataTemplateSelector.ServiceTemplate>
+                        </conv:NodeDataTemplateSelector.ServiceTemplate>
 
-                        <local:NodeDataTemplateSelector.ActionTemplate>
+                        <conv:NodeDataTemplateSelector.ActionTemplate>
                             <DataTemplate x:DataType="vm:ActionNodeViewModel">
                                 <StackPanel Orientation="Horizontal">
                                     <FontIcon
@@ -132,18 +133,31 @@
                                         TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
                             </DataTemplate>
-                        </local:NodeDataTemplateSelector.ActionTemplate>
+                        </conv:NodeDataTemplateSelector.ActionTemplate>
 
-                        <local:NodeDataTemplateSelector.FallbackTemplate>
+                        <conv:NodeDataTemplateSelector.FallbackTemplate>
                             <DataTemplate x:DataType="vm:INodeViewModel">
                                 <TextBlock
                                     Text="{x:Bind Label, Mode=OneWay}"
                                     Foreground="{StaticResource MutedForegroundBrush}"
                                     FontStyle="Italic" />
                             </DataTemplate>
-                        </local:NodeDataTemplateSelector.FallbackTemplate>
-                    </local:NodeDataTemplateSelector>
-                </TreeView.ItemTemplateSelector>
+                        </conv:NodeDataTemplateSelector.FallbackTemplate>
+                    </conv:NodeDataTemplateSelector>
+                </TreeView.Resources>
+
+                <!-- No ItemContainerStyle ItemsSource binding: the container DataContext is null
+                     (see note above), so {Binding Children} resolves to nothing. Child ItemsSource
+                     is assigned in code (OnTreeLayoutUpdated). -->
+                <TreeView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:INodeViewModel">
+                        <ContentControl
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Stretch"
+                            Content="{x:Bind}"
+                            ContentTemplateSelector="{StaticResource NodeTemplateSelector}" />
+                    </DataTemplate>
+                </TreeView.ItemTemplate>
             </TreeView>
 
             <!-- Right pane: live SSDP log (FR-003 / FR-014 / FR-015 / FR-101) -->
