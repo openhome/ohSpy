@@ -1,5 +1,9 @@
 # Deferred Work
 
+## Deferred from: code review of 2-7-ssdp-message-log-right-pane-virtualised-smart-auto-follow (2026-06-03)
+
+- **`OnLogEntriesChanged` does not assert `NewStartingIndex == 0`** — The scroll handler in `MainWindow.xaml.cs` guards on `NotifyCollectionChangedAction.Add` but does not verify `e.NewStartingIndex == 0`. `BoundedObservableCollection` is sealed and `PrependNewest` is its only Add operation (always index 0), so this is safe today. If the collection gains an append or mid-insert operation in a future story, any `Add` at index > 0 would incorrectly trigger the at-top anchor or offset compensation. Low risk while `BoundedObservableCollection` remains prepend-only; revisit if new insertion variants are added. `src/ohSpy.App/MainWindow.xaml.cs:47`.
+
 ## Discovered during: first manual run / deployment check (2026-06-03)
 
 - **`Program.cs` bootstrap call contradicts `WindowsAppSDKSelfContained=true` (runtime-availability bug).** `Program.Main` unconditionally calls `Bootstrap.TryInitialize(0x00020001, "", minVersion 2.1.3.0, …)` — the **framework-dependent** Windows App SDK bootstrapper, which requires an *installed* Windows App Runtime ≥ 2.1.3. But `ohSpy.App.csproj` sets `WindowsAppSDKSelfContained=true` + `SelfContained=true`, whose contract is that the runtime ships **next to the exe** and the bootstrapper is **not** used. The two are mutually exclusive, so the self-contained config is currently a no-op and every output (build *and* publish) behaves framework-dependent.

@@ -20,6 +20,9 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     private DeviceTreeViewModel _deviceTree;
 
+    [ObservableProperty]
+    private SsdpLogViewModel _ssdpLog;
+
     public ShellViewModel(
         INetworkAdapterEnumerator adapterEnum,
         ISsdpTransport transport,
@@ -34,6 +37,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
         _discovery   = discovery;
         _diag        = diag;
         _deviceTree  = new DeviceTreeViewModel(registry, ui, nodeServices);
+        _ssdpLog     = new SsdpLogViewModel(discovery, ui); // subscribes to AnnouncementReceived
     }
 
     // Called from App.OnLaunched (fire-and-forget, Amendment A26 pattern).
@@ -92,5 +96,6 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
         await _discovery.DisposeAsync().ConfigureAwait(false);
 
         DeviceTree.Dispose();
+        SsdpLog.Dispose(); // unsubscribe from AnnouncementReceived
     }
 }

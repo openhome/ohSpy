@@ -6,6 +6,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:ohSpy.Core.ViewModels"
+    xmlns:m="using:ohSpy.Core.Models"
     Title="ohSpy"
     mc:Ignorable="d">
     <Window.SystemBackdrop>
@@ -126,16 +127,49 @@
                 </TreeView.ItemTemplateSelector>
             </TreeView>
 
-            <!-- Right pane: placeholder for SSDP log (Story 2.7) -->
+            <!-- Right pane: live SSDP log (FR-003 / FR-014 / FR-015 / FR-101) -->
             <Border
                 Grid.Column="1"
                 BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
                 BorderThickness="1,0,0,0">
-                <TextBlock
-                    Text="SSDP log — Story 2.7"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Foreground="{StaticResource MutedForegroundBrush}" />
+                <ScrollViewer
+                    x:Name="LogScrollViewer"
+                    VerticalScrollBarVisibility="Auto"
+                    VerticalScrollMode="Enabled">
+                    <ItemsRepeater ItemsSource="{x:Bind ViewModel.SsdpLog.Entries, Mode=OneWay}">
+                        <ItemsRepeater.Layout>
+                            <StackLayout Orientation="Vertical" />
+                        </ItemsRepeater.Layout>
+                        <ItemsRepeater.ItemTemplate>
+                            <DataTemplate x:DataType="m:SsdpLogEntry">
+                                <Grid Padding="8,2" ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <!-- Timestamp (local-time HH:mm:ss.fff) -->
+                                    <TextBlock
+                                        Grid.Column="0"
+                                        Text="{x:Bind TimestampDisplay}"
+                                        FontFamily="Consolas"
+                                        Foreground="{StaticResource MutedForegroundBrush}" />
+                                    <!-- ALIVE / BYEBYE literal token -->
+                                    <TextBlock
+                                        Grid.Column="1"
+                                        Text="{x:Bind KindToken}"
+                                        FontFamily="Consolas" />
+                                    <!-- Device UUID -->
+                                    <TextBlock
+                                        Grid.Column="2"
+                                        Text="{x:Bind UuidText}"
+                                        FontFamily="Consolas"
+                                        TextTrimming="CharacterEllipsis" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsRepeater.ItemTemplate>
+                    </ItemsRepeater>
+                </ScrollViewer>
             </Border>
         </Grid>
     </Grid>
