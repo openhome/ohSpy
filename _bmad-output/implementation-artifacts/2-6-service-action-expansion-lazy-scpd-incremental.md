@@ -4,7 +4,7 @@ baseline_commit: 8172c8e3474596af41059e24b561afd45d430db2
 
 # Story 2.6: Service & Action Expansion (Lazy SCPD, Incremental)
 
-Status: review
+Status: done
 
 ## Story
 

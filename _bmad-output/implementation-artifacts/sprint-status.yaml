@@ -37,6 +37,7 @@
 
 generated: 2026-06-01
 last_updated: 2026-06-03
+# 2026-06-03: Story 2.6 moved review → done (committed a61ca08; Sonnet code-review APPROVED-WITH-MINOR-FINDINGS, both patches fixed + verified). F3 deferred (HTTP-layer cancellation test gap) + Task 12.5 manual UI smoke remain as epic-close items.
 # 2026-06-03: Story 2.6 moved in-progress → review by dev-story workflow (claude-opus-4-8[1m]) after addressing code-review follow-ups. F1 (LOW) fixed: split fetch/parse try blocks so oversize-body UpnpProtocolException logs as ScpdFetch not ScpdParse, + regression test. F2 (cosmetic) fixed: removed dead `?? ""` on non-nullable ServiceType. Build 0 errors/0 warnings, 268 passed/2 skipped (was 267; +1 test), chaos=1. F3 remains deferred.
 # 2026-06-03: Story 2.6 review → in-progress by code-review (claude-sonnet-4-6). APPROVED-WITH-MINOR-FINDINGS. 2 patches left as action items (F1: UpnpProtocolException from oversize HTTP body misclassified as ScpdParse — LOW; F2: dead null-check in ComputeLabel — COSMETIC). 1 deferred (AC-2.6.8 test only exercises parser-path OCE). Build 0 errors confirmed, 267 passed/2 skipped confirmed, chaos=1 confirmed, CoreAppBoundary 4 green. Spec deviation (CT last per CA1068/Pattern 6) ACCEPTED.
 # 2026-06-03: Story 2.6 moved in-progress → review by dev-story workflow (claude-opus-4-8[1m]). 17 tests (250→267 passing, 2 skips unchanged), build 0 errors (1 pre-existing benign WMC1506 XAML warning on the 2.5 FallbackTemplate, no new warnings), chaos suite unchanged at 1, CoreAppBoundaryTests green. NodeServices bundle + ServiceNodeViewModel (lazy SCPD fetch + incremental action stream) + ActionNodeViewModel (leaf); DeviceNodeViewModel real expand handler (synchronous service-list build, Interlocked once-guard resolves the 2.5 ReplaceWith-Reset deferral); Service/Action XAML templates + selector routing. One spec deviation: ServiceNodeViewModel ctor takes CancellationToken last (CA1068 / Pattern 6). Task 12.5 manual UI smoke not executed (headless env).
@@ -104,7 +105,7 @@ development_status:
   2-3-device-registry-descriptionfetchstate-machine-eager-description-dispatcher: done
   2-4-ssdp-parser-discoveryservice-wire-transport-into-registry: done
   2-5-main-window-shell-device-tree-top-level-rows: done
-  2-6-service-action-expansion-lazy-scpd-incremental: review
+  2-6-service-action-expansion-lazy-scpd-incremental: done
   2-7-ssdp-message-log-right-pane-virtualised-smart-auto-follow: backlog
   2-8-right-click-context-menus-xml-viewing-in-default-browser: backlog
   2-9-window-ownership-manager-properties-window-first-popup: backlog
