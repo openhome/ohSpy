@@ -42,5 +42,10 @@ internal sealed class InvocationPopupLauncher : IInvocationPopupLauncher
         window.Activate();                                   // (1) D10: MUST precede Adopt
         if (ShellWindow is not null)
             _ownership.Adopt(window, ShellWindow);           // (2) FR-046 ownership (AC-10.5)
+
+        // (3) Story 3.3 async-init seam: fetch+parse the SCPD state table and upgrade the ctor's
+        // text-only inputs into constrained variants (AC-3.3.1). Fire-and-forget — every exception
+        // is handled inside InitializeAsync, and the popup CTS cancels it on close (OCE swallowed).
+        _ = vm.InitializeAsync();
     }
 }

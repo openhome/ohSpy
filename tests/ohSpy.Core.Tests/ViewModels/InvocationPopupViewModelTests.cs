@@ -7,6 +7,7 @@ using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Http;
 using ohSpy.Core.Models;
 using ohSpy.Core.Tests.Fakes;
+using ohSpy.Core.Threading;
 using ohSpy.Core.ViewModels;
 
 /// <summary>
@@ -46,7 +47,7 @@ public sealed class InvocationPopupViewModelTests
         registry = new FakeDeviceRegistry();
         return new InvocationPopupViewModel(
             action, service ?? Service(), entry ?? Entry(),
-            http, new InlineUiDispatcher(), diag, registry);
+            http, new InlineUiDispatcher(), diag, registry, new StubScpdParser());
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition, int timeoutMs = 2000)
@@ -188,7 +189,7 @@ public sealed class InvocationPopupViewModelTests
         var diag = new CapturingDiagnosticEmitter();
         var registry = new FakeDeviceRegistry();
         var vm = new InvocationPopupViewModel(
-            Action("GetVolume"), Service(), Entry(), http, ui, diag, registry);
+            Action("GetVolume"), Service(), Entry(), http, ui, diag, registry, new StubScpdParser());
         http.InvokeResponder = (_, _) => Task.FromResult(new SoapResponse("GetVolume", Array.Empty<SoapArgument>()));
 
         await vm.InvokeCommand.ExecuteAsync(null);
@@ -373,7 +374,7 @@ public sealed class InvocationPopupViewModelTests
         var diag = new CapturingDiagnosticEmitter();
         var registry = new FakeDeviceRegistry();
         var vm = new InvocationPopupViewModel(
-            Action("GetVolume"), Service(), entry, http, new InlineUiDispatcher(), diag, registry);
+            Action("GetVolume"), Service(), entry, http, new InlineUiDispatcher(), diag, registry, new StubScpdParser());
         http.InvokeResponder = async (_, ct) =>
         {
             started.SetResult();
@@ -413,5 +414,417 @@ public sealed class InvocationPopupViewModelTests
         var act = () => { vm.Dispose(); vm.Dispose(); };
 
         act.Should().NotThrow("Interlocked guard makes Dispose idempotent");
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    //  Story 3.3 — InitializeAsync: SCPD state-table load + constrained-input resolution
+    // ════════════════════════════════════════════════════════════════════════════
+
+    private static readonly byte[] DummyScpdBytes = System.Text.Encoding.UTF8.GetBytes("<scpd/>");
+
+    // An input arg whose RelatedStateVariable matches a state-table key.
+    private static ScpdArgument InVar(string argName, string relatedStateVariable) =>
+        new(argName, relatedStateVariable, ScpdDirection.In);
+
+    private static ScpdAction ActionWith(string name, params ScpdArgument[] inputs) =>
+        new(name, inputs.ToList(), Array.Empty<ScpdArgument>());
+
+    private static ScpdStateVariable Sv(
+        string name, string dataType, string? defaultValue = null,
+        IReadOnlyList<string>? allowedValueList = null, ScpdAllowedValueRange? allowedValueRange = null) =>
+        new(name, dataType, defaultValue, allowedValueList, allowedValueRange);
+
+    private static ScpdStateTable Table(params ScpdStateVariable[] vars) =>
+        new(vars.ToDictionary(v => v.Name, StringComparer.Ordinal));
+
+    // params helper avoids CA1861 (constant array argument) at the call sites.
+    private static string[] L(params string[] values) => values;
+
+    // Builds a VM wired so InitializeAsync fetches DummyScpdBytes and parses to the supplied table.
+    private static InvocationPopupViewModel MakeInitVm(
+        ScpdAction action,
+        ScpdStateTable table,
+        out StubUpnpHttpClient http,
+        out CapturingDiagnosticEmitter diag,
+        IUiDispatcher? ui = null,
+        Func<Exception>? parseThrower = null,
+        Func<Uri, CancellationToken, Task<byte[]>>? scpdResponder = null)
+    {
+        http = new StubUpnpHttpClient
+        {
+            ScpdResponder = scpdResponder ?? ((_, _) => Task.FromResult(DummyScpdBytes)),
+        };
+        diag = new CapturingDiagnosticEmitter();
+        var registry = new FakeDeviceRegistry();
+        var parser = new StubScpdParser { StateTable = table, StateTableThrower = parseThrower };
+        return new InvocationPopupViewModel(
+            action, Service(), Entry(), http, ui ?? new InlineUiDispatcher(), diag, registry, parser);
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.2")]
+    public async Task InitializeAsync_ListVariable_ResolvesListVariant_FR102()
+    {
+        var action = ActionWith("SetMode", InVar("DesiredMode", "Mode"));
+        var table = Table(Sv("Mode", "string", "Stereo", allowedValueList: L("Stereo", "Mono", "Surround")));
+        var vm = MakeInitVm(action, table, out _, out var diag);
+
+        await vm.InitializeAsync();
+
+        var list = vm.Inputs.Should().ContainSingle().Subject
+            .Should().BeOfType<AllowedValueListArgumentViewModel>().Subject;
+        list.AllowedValues.Should().Equal("Stereo", "Mono", "Surround");
+        list.SelectedValue.Should().Be("Stereo");
+        vm.IsLoadingInputs.Should().BeFalse();
+        diag.Entries.Should().BeEmpty("a well-formed list emits no diagnostic");
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.4")]
+    public async Task InitializeAsync_RangeVariable_ResolvesRangeVariant_FR103()
+    {
+        var action = ActionWith("SetVolume", InVar("DesiredVolume", "Volume"));
+        var table = Table(Sv("Volume", "ui4", "50",
+            allowedValueRange: new ScpdAllowedValueRange(0, 100, 1)));
+        var vm = MakeInitVm(action, table, out _, out var diag);
+
+        await vm.InitializeAsync();
+
+        var range = vm.Inputs.Should().ContainSingle().Subject
+            .Should().BeOfType<AllowedValueRangeArgumentViewModel>().Subject;
+        range.Minimum.Should().Be(0);
+        range.Maximum.Should().Be(100);
+        range.Step.Should().Be(1);
+        range.NumericValue.Should().Be(50);
+        diag.Entries.Should().BeEmpty();
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.4")]
+    public async Task InitializeAsync_RangeVariable_NoStep_ResolvesRangeVariant_FR103()
+    {
+        var action = ActionWith("SetBalance", InVar("DesiredBalance", "Balance"));
+        var table = Table(Sv("Balance", "i4",
+            allowedValueRange: new ScpdAllowedValueRange(-15, 15, null)));
+        var vm = MakeInitVm(action, table, out _, out _);
+
+        await vm.InitializeAsync();
+
+        var range = vm.Inputs.Should().ContainSingle().Subject
+            .Should().BeOfType<AllowedValueRangeArgumentViewModel>().Subject;
+        range.Step.Should().BeNull();
+        range.NumericValue.Should().Be(-15, "no default → Minimum");
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.3")]
+    public async Task InitializeAsync_EmptyList_FallsBackToText_EmitsScpdParse_FR102()
+    {
+        var action = ActionWith("SetMode", InVar("DesiredMode", "Mode"));
+        var table = Table(Sv("Mode", "string", allowedValueList: Array.Empty<string>()));
+        var vm = MakeInitVm(action, table, out _, out var diag);
+
+        await vm.InitializeAsync();
+
+        vm.Inputs.Should().ContainSingle().Which.Should().BeOfType<ArgumentInputViewModel>("an empty list falls back to free-form text");
+        diag.Entries.Should().ContainSingle().Which.Category.Should().Be(DiagCategories.ScpdParse);
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.7")]
+    public async Task InitializeAsync_RangeOnNonNumericType_FallsBackToText_EmitsScpdParse_FR103()
+    {
+        var action = ActionWith("SetX", InVar("X", "StrRange"));
+        var table = Table(Sv("StrRange", "string",
+            allowedValueRange: new ScpdAllowedValueRange(0, 10, 1)));
+        var vm = MakeInitVm(action, table, out _, out var diag);
+
+        await vm.InitializeAsync();
+
+        vm.Inputs.Should().ContainSingle().Which.Should().BeOfType<ArgumentInputViewModel>();
+        diag.Entries.Should().ContainSingle().Which.Category.Should().Be(DiagCategories.ScpdParse);
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.7")]
+    public async Task InitializeAsync_RangeMinGreaterThanMax_FallsBackToText_EmitsScpdParse_FR103()
+    {
+        var action = ActionWith("SetX", InVar("X", "BadRange"));
+        var table = Table(Sv("BadRange", "ui4",
+            allowedValueRange: new ScpdAllowedValueRange(100, 0, 1)));
+        var vm = MakeInitVm(action, table, out _, out var diag);
+
+        await vm.InitializeAsync();
+
+        vm.Inputs.Should().ContainSingle().Which.Should().BeOfType<ArgumentInputViewModel>();
+        diag.Entries.Should().ContainSingle().Which.Category.Should().Be(DiagCategories.ScpdParse);
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.7")]
+    public async Task InitializeAsync_RangeStepZero_FallsBackToText_EmitsScpdParse_FR103()
+    {
+        var action = ActionWith("SetX", InVar("X", "ZeroStep"));
+        var table = Table(Sv("ZeroStep", "ui4",
+            allowedValueRange: new ScpdAllowedValueRange(0, 100, 0)));
+        var vm = MakeInitVm(action, table, out _, out var diag);
+
+        await vm.InitializeAsync();
+
+        vm.Inputs.Should().ContainSingle().Which.Should().BeOfType<ArgumentInputViewModel>();
+        diag.Entries.Should().ContainSingle().Which.Category.Should().Be(DiagCategories.ScpdParse);
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.8")]
+    public async Task InitializeAsync_BothListAndRange_ListWins_EmitsScpdParse_FR102()
+    {
+        var action = ActionWith("SetMode", InVar("DesiredMode", "Both"));
+        var table = Table(Sv("Both", "ui4", "Mono",
+            allowedValueList: L("Stereo", "Mono"),
+            allowedValueRange: new ScpdAllowedValueRange(0, 100, 1)));
+        var vm = MakeInitVm(action, table, out _, out var diag);
+
+        await vm.InitializeAsync();
+
+        var list = vm.Inputs.Should().ContainSingle().Subject
+            .Should().BeOfType<AllowedValueListArgumentViewModel>("FR-102 wins when both are declared").Subject;
+        list.SelectedValue.Should().Be("Mono");
+        diag.Entries.Should().ContainSingle().Which.Category.Should().Be(DiagCategories.ScpdParse);
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.9")]
+    public async Task InitializeAsync_NeitherConstraint_StaysText_NoDiagnostic()
+    {
+        var action = ActionWith("SetX", InVar("X", "Plain"));
+        var table = Table(Sv("Plain", "string", "hello"));
+        var vm = MakeInitVm(action, table, out _, out var diag);
+
+        await vm.InitializeAsync();
+
+        vm.Inputs.Should().ContainSingle().Which.Should().BeOfType<ArgumentInputViewModel>();
+        diag.Entries.Should().BeEmpty("a plain variable is not malformed — no diagnostic");
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.9")]
+    public async Task InitializeAsync_RelatedVariableNotFound_StaysText_NoDiagnostic()
+    {
+        var action = ActionWith("SetX", InVar("X", "Missing"));
+        var table = Table(Sv("SomethingElse", "string"));
+        var vm = MakeInitVm(action, table, out _, out var diag);
+
+        await vm.InitializeAsync();
+
+        vm.Inputs.Should().ContainSingle().Which.Should().BeOfType<ArgumentInputViewModel>();
+        diag.Entries.Should().BeEmpty("a name miss is legitimate, not malformed");
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.1")]
+    public async Task InitializeAsync_MixedInputs_ResolvesEachIndependently()
+    {
+        var action = ActionWith("DoLots",
+            InVar("A", "Mode"),       // list
+            InVar("B", "Volume"),     // range
+            InVar("C", "Plain"),      // text
+            InVar("D", "Missing"));   // text (not found)
+        var table = Table(
+            Sv("Mode", "string", "Mono", allowedValueList: L("Stereo", "Mono")),
+            Sv("Volume", "ui4", "50", allowedValueRange: new ScpdAllowedValueRange(0, 100, 1)),
+            Sv("Plain", "string"));
+        var vm = MakeInitVm(action, table, out _, out _);
+
+        await vm.InitializeAsync();
+
+        vm.Inputs.Should().HaveCount(4);
+        vm.Inputs[0].Should().BeOfType<AllowedValueListArgumentViewModel>();
+        vm.Inputs[1].Should().BeOfType<AllowedValueRangeArgumentViewModel>();
+        vm.Inputs[2].Should().BeOfType<ArgumentInputViewModel>();
+        vm.Inputs[3].Should().BeOfType<ArgumentInputViewModel>();
+        vm.Inputs.Select(i => i.Name).Should().Equal(L("A", "B", "C", "D"), "order preserved");
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.1")]
+    public async Task InitializeAsync_FetchFails_AllStayText_EmitsOneScpdParse()
+    {
+        var action = ActionWith("SetMode", InVar("DesiredMode", "Mode"));
+        var table = Table(Sv("Mode", "string", allowedValueList: L("Stereo")));
+        var vm = MakeInitVm(action, table, out _, out var diag,
+            scpdResponder: (url, _) => throw new UpnpTransportException(url, "boom", statusCode: 500));
+
+        await vm.InitializeAsync();
+
+        vm.Inputs.Should().ContainSingle().Which.Should().BeOfType<ArgumentInputViewModel>("a fetch failure keeps the ctor's text inputs");
+        vm.IsLoadingInputs.Should().BeFalse();
+        var entry = diag.Entries.Should().ContainSingle().Subject;
+        entry.Category.Should().Be(DiagCategories.ScpdParse);
+        entry.Context.DeviceUuid.Should().Be(DeviceUuid);
+        entry.Context.ServiceId.Should().Be("urn:upnp-org:serviceId:RenderingControl");
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.1")]
+    public async Task InitializeAsync_ParseThrows_AllStayText_EmitsOneScpdParse()
+    {
+        var action = ActionWith("SetMode", InVar("DesiredMode", "Mode"));
+        var vm = MakeInitVm(action, Table(), out _, out var diag,
+            parseThrower: () => new UpnpProtocolException(new Uri("http://x/scpd"), "malformed state table"));
+
+        await vm.InitializeAsync();
+
+        vm.Inputs.Should().ContainSingle().Which.Should().BeOfType<ArgumentInputViewModel>();
+        diag.Entries.Should().ContainSingle().Which.Category.Should().Be(DiagCategories.ScpdParse);
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.1")]
+    public async Task InitializeAsync_Cancelled_Swallowed_NoDiagnostic_InputsUnchanged()
+    {
+        var action = ActionWith("SetMode", InVar("DesiredMode", "Mode"));
+        var table = Table(Sv("Mode", "string", allowedValueList: L("Stereo")));
+        var vm = MakeInitVm(action, table, out _, out var diag,
+            scpdResponder: (_, ct) => throw new OperationCanceledException(ct));
+
+        await vm.InitializeAsync();
+
+        vm.Inputs.Should().ContainSingle().Which.Should().BeOfType<ArgumentInputViewModel>("cancellation leaves the ctor inputs");
+        diag.Entries.Should().BeEmpty("cancellation emits no diagnostic");
+        vm.IsLoadingInputs.Should().BeFalse();
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.1")]
+    public async Task InitializeAsync_ArgumentLessAction_ReturnsImmediately_NotLoading()
+    {
+        var vm = MakeInitVm(Action("GetVolume"), Table(), out var http, out _);
+
+        await vm.InitializeAsync();
+
+        vm.IsLoadingInputs.Should().BeFalse("an argument-less action has nothing to load");
+        vm.Inputs.Should().BeEmpty();
+        http.RequestedUrls.Should().BeEmpty("no SCPD fetch when there are no inputs");
+    }
+
+    // ─── Marshalling regression (the Story 3.2 smoke crash class) ────────────────
+
+    [Fact]
+    [Trait("ac", "AC-3.3.1")]
+    public async Task InitializeAsync_MarshalsRebuildThroughDispatcher_NotDirectly()
+    {
+        // Regression guard for winui-no-synccontext-marshal-vm: the post-await continuation runs on a
+        // thread-pool thread; the Inputs rebuild + IsLoadingInputs clear MUST go through IUiDispatcher
+        // or the bound window pokes UIElement off-thread → RPC_E_WRONGTHREAD → crash. A DeferredUiDispatcher
+        // proves it: after await InitializeAsync() returns, the rebuild has NOT been applied until Drain().
+        var ui = new DeferredUiDispatcher();
+        var action = ActionWith("SetMode", InVar("DesiredMode", "Mode"));
+        var table = Table(Sv("Mode", "string", "Mono", allowedValueList: L("Stereo", "Mono")));
+        var vm = MakeInitVm(action, table, out _, out _, ui: ui);
+
+        await vm.InitializeAsync();
+
+        // Before drain: still the ctor's text-only input, still "loading" — proving the rebuild was Posted.
+        vm.Inputs.Should().ContainSingle().Which.Should().BeOfType<ArgumentInputViewModel>(
+            "the rebuilt Inputs must be marshalled through the UI dispatcher, not applied directly off-thread");
+        vm.IsLoadingInputs.Should().BeTrue("IsLoadingInputs=false is part of the marshalled rebuild");
+        ui.PostCount.Should().BeGreaterThan(0, "the VM must Post its Inputs rebuild");
+
+        ui.Drain();
+
+        vm.Inputs.Should().ContainSingle().Which.Should().BeOfType<AllowedValueListArgumentViewModel>();
+        vm.IsLoadingInputs.Should().BeFalse();
+    }
+
+    // ─── Off-step Invoke gate (AC-3.3.6) ─────────────────────────────────────────
+
+    [Fact]
+    [Trait("ac", "AC-3.3.6")]
+    public async Task Invoke_OffStepRangeInput_ShortCircuits_NoSoapCall_FR103()
+    {
+        var action = ActionWith("SetVolume", InVar("DesiredVolume", "Volume"));
+        var table = Table(Sv("Volume", "ui4", "0", allowedValueRange: new ScpdAllowedValueRange(0, 10, 2)));
+        var vm = MakeInitVm(action, table, out var http, out _);
+        await vm.InitializeAsync();
+        var range = (AllowedValueRangeArgumentViewModel)vm.Inputs[0];
+        range.NumericValue = 3; // off-step
+
+        await vm.InvokeCommand.ExecuteAsync(null);
+
+        http.InvokedRequests.Should().BeEmpty("an off-step range input refuses to send (no SOAP request fires)");
+        range.ValidationError.Should().NotBeNull();
+        vm.IsInvoking.Should().BeFalse();
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.6")]
+    public async Task Invoke_OnStepRangeInput_Proceeds_SendsInvariantValue_FR103()
+    {
+        var action = ActionWith("SetVolume", InVar("DesiredVolume", "Volume"));
+        var table = Table(Sv("Volume", "ui4", "0", allowedValueRange: new ScpdAllowedValueRange(0, 100, 1)));
+        var vm = MakeInitVm(action, table, out var http, out _);
+        http.InvokeResponder = (_, _) => Task.FromResult(new SoapResponse("SetVolume", Array.Empty<SoapArgument>()));
+        await vm.InitializeAsync();
+        ((AllowedValueRangeArgumentViewModel)vm.Inputs[0]).NumericValue = 42;
+
+        await vm.InvokeCommand.ExecuteAsync(null);
+
+        var req = http.InvokedRequests.Should().ContainSingle().Subject;
+        req.InputArguments.Should().ContainSingle()
+            .Which.Should().Be(new SoapArgument("DesiredVolume", "42"), "the invariant-formatted value flows uniformly through ResolvedValue");
+    }
+
+    [Fact]
+    [Trait("ac", "AC-3.3.11")]
+    public async Task Invoke_ListSelection_FlowsThroughResolvedValue_FR102()
+    {
+        var action = ActionWith("SetMode", InVar("DesiredMode", "Mode"));
+        var table = Table(Sv("Mode", "string", "Stereo", allowedValueList: L("Stereo", "Mono", "Surround")));
+        var vm = MakeInitVm(action, table, out var http, out _);
+        http.InvokeResponder = (_, _) => Task.FromResult(new SoapResponse("SetMode", Array.Empty<SoapArgument>()));
+        await vm.InitializeAsync();
+        ((AllowedValueListArgumentViewModel)vm.Inputs[0]).SelectedValue = "Surround";
+
+        await vm.InvokeCommand.ExecuteAsync(null);
+
+        http.InvokedRequests.Should().ContainSingle()
+            .Which.InputArguments.Should().ContainSingle()
+            .Which.Should().Be(new SoapArgument("DesiredMode", "Surround"));
+    }
+
+    // ─── Integration: real parser over the rich fixture ──────────────────────────
+
+    [Fact]
+    [Trait("ac", "AC-3.3.1")]
+    public async Task InitializeAsync_RealParser_OverRichFixture_ResolvesAllVariants()
+    {
+        // Drive the REAL XmlReaderScpdParser over state-table-rich.xml to prove the consumer-side
+        // resolution wires to the actual parser output (not just hand-built tables).
+        var fixture = System.IO.File.ReadAllBytes(
+            System.IO.Path.Combine(AppContext.BaseDirectory, "Fixtures", "Scpds", "state-table-rich.xml"));
+        var action = ActionWith("SetAll",
+            InVar("DesiredMute", "Mute"),       // boolean, no list/range → text
+            InVar("DesiredVolume", "Volume"),   // ui4 range step 1 → range
+            InVar("DesiredBalance", "Balance"), // i4 range no-step → range
+            InVar("DesiredMode", "Mode"));      // string list → list
+        var http = new StubUpnpHttpClient { ScpdResponder = (_, _) => Task.FromResult(fixture) };
+        var diag = new CapturingDiagnosticEmitter();
+        var registry = new FakeDeviceRegistry();
+        var vm = new InvocationPopupViewModel(
+            action, Service(), Entry(), http, new InlineUiDispatcher(), diag, registry,
+            new ohSpy.Core.Scpd.XmlReaderScpdParser());
+
+        await vm.InitializeAsync();
+
+        vm.Inputs[0].Should().BeOfType<ArgumentInputViewModel>("boolean Mute has neither list nor range → text");
+        var volume = vm.Inputs[1].Should().BeOfType<AllowedValueRangeArgumentViewModel>().Subject;
+        volume.Maximum.Should().Be(100);
+        volume.Step.Should().Be(1);
+        volume.NumericValue.Should().Be(50);
+        vm.Inputs[2].Should().BeOfType<AllowedValueRangeArgumentViewModel>().Which.Step.Should().BeNull();
+        vm.Inputs[3].Should().BeOfType<AllowedValueListArgumentViewModel>().Which.AllowedValues
+            .Should().Equal("Stereo", "Mono", "Surround");
+        diag.Entries.Should().BeEmpty("the rich fixture is all well-formed");
     }
 }

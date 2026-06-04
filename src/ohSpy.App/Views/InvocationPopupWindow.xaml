@@ -7,6 +7,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:ohSpy.Core.ViewModels"
     xmlns:models="using:ohSpy.Core.Models"
+    xmlns:conv="using:ohSpy.App.Converters"
     Title="Invoke action"
     mc:Ignorable="d">
 
@@ -27,6 +28,70 @@
                 <Setter Property="VerticalAlignment" Value="Center" />
                 <Setter Property="Margin" Value="0,0,16,0" />
             </Style>
+
+            <!-- Story 3.3: heterogeneous input rendering — one control per argument variant
+                 (FR-102 ComboBox / FR-103 NumberBox / 3.2 TextBox). Keyed on the VM runtime subtype. -->
+            <conv:ArgumentInputTemplateSelector x:Key="ArgumentInputTemplateSelector">
+                <conv:ArgumentInputTemplateSelector.TextTemplate>
+                    <DataTemplate x:DataType="vm:ArgumentInputViewModel">
+                        <Grid Margin="0,4" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="200" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{x:Bind Name}" TextWrapping="Wrap" Style="{StaticResource ArgNameStyle}" />
+                            <TextBox Grid.Column="1" Text="{x:Bind Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </Grid>
+                    </DataTemplate>
+                </conv:ArgumentInputTemplateSelector.TextTemplate>
+
+                <conv:ArgumentInputTemplateSelector.ListTemplate>
+                    <DataTemplate x:DataType="vm:AllowedValueListArgumentViewModel">
+                        <Grid Margin="0,4" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="200" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{x:Bind Name}" TextWrapping="Wrap" Style="{StaticResource ArgNameStyle}" />
+                            <ComboBox
+                                Grid.Column="1"
+                                HorizontalAlignment="Stretch"
+                                ItemsSource="{x:Bind AllowedValues}"
+                                SelectedItem="{x:Bind SelectedValue, Mode=TwoWay}" />
+                        </Grid>
+                    </DataTemplate>
+                </conv:ArgumentInputTemplateSelector.ListTemplate>
+
+                <conv:ArgumentInputTemplateSelector.RangeTemplate>
+                    <DataTemplate x:DataType="vm:AllowedValueRangeArgumentViewModel">
+                        <Grid Margin="0,4" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="200" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{x:Bind Name}" TextWrapping="Wrap" Style="{StaticResource ArgNameStyle}" VerticalAlignment="Top" Margin="0,8,16,0" />
+                            <StackPanel Grid.Column="1" Spacing="4">
+                                <NumberBox
+                                    HorizontalAlignment="Stretch"
+                                    Minimum="{x:Bind Minimum}"
+                                    Maximum="{x:Bind Maximum}"
+                                    SmallChange="{x:Bind StepOrOne}"
+                                    SpinButtonPlacementMode="Inline"
+                                    Value="{x:Bind NumericValue, Mode=TwoWay}" />
+                                <!-- AC-3.3.6 inline off-step / out-of-range error. An empty/null
+                                     ValidationError leaves the TextBlock with no text → zero height
+                                     (no converter needed — a converter's StaticResource lookup root is
+                                     a FrameworkElement, unavailable under a Window-rooted x:Bind). -->
+                                <TextBlock
+                                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                    FontSize="12"
+                                    TextWrapping="Wrap"
+                                    Text="{x:Bind ValidationError, Mode=OneWay}" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </conv:ArgumentInputTemplateSelector.RangeTemplate>
+            </conv:ArgumentInputTemplateSelector>
         </Grid.Resources>
 
         <Grid.RowDefinitions>
@@ -70,20 +135,25 @@
                     FontStyle="Italic"
                     Visibility="{x:Bind NoInputsVisibility}" />
 
-                <ItemsControl ItemsSource="{x:Bind ViewModel.Inputs}" IsEnabled="{x:Bind IsInputEnabled, Mode=OneWay}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:ArgumentInputViewModel">
-                            <Grid Margin="0,4" ColumnSpacing="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="200" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="{x:Bind Name}" TextWrapping="Wrap" Style="{StaticResource ArgNameStyle}" />
-                                <TextBox Grid.Column="1" Text="{x:Bind Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <!-- AC-3.3.1: "Loading…" hint while InitializeAsync fetches+parses the SCPD state table. -->
+                <StackPanel
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    Margin="0,4"
+                    Visibility="{x:Bind LoadingInputsVisibility, Mode=OneWay}">
+                    <ProgressRing Width="16" Height="16" IsActive="True" />
+                    <TextBlock
+                        Text="Loading…"
+                        VerticalAlignment="Center"
+                        Foreground="{StaticResource MutedForegroundBrush}"
+                        FontStyle="Italic" />
+                </StackPanel>
+
+                <!-- Story 3.3: heterogeneous input rendering via the variant template selector. -->
+                <ItemsControl
+                    ItemsSource="{x:Bind ViewModel.Inputs}"
+                    IsEnabled="{x:Bind IsInputEnabled, Mode=OneWay}"
+                    ItemTemplateSelector="{StaticResource ArgumentInputTemplateSelector}" />
 
                 <!-- ── Invoke + status (FR-027) ── -->
                 <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,16,0,0" VerticalAlignment="Center">

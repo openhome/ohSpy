@@ -1,5 +1,10 @@
 # Deferred Work
 
+## Deferred from: code review of 3-3-constrained-inputs-allowedvaluelist-dropdown-allowedvaluerange-numeric (2026-06-04)
+
+- **`NoInputsVisibility` binding missing `Mode=OneWay`** [`src/ohSpy.App/Views/InvocationPopupWindow.xaml:136`] — pre-existing 3.2 pattern, not introduced by 3.3. `NoInputsVisibility` is a static one-time computation (arg count does not change) so the binding correctness is unaffected. Add `Mode=OneWay` in a future XAML clean-up pass alongside any similar cases in the window.
+- **Manual smoke steps 2–5 deferred** (Story 3.3 Task 9) — requires a Linn DS network / Story 5.2 adapter switch. Deferred steps: (2) NumberBox `<allowedValueRange>` numeric + invariant wire value on `SetVolume 0..100 step 1`; (3) off-step inline error + Invoke refused; (4) fallback-to-text for a plain string arg; (5) "Loading…" state visible then resolves. FR-102 dropdown (step 1) was smoke-PASSED on live Sky network. Core VM logic for all deferred steps is unit-tested (`AllowedValueRangeArgumentViewModel`, off-step gate, `ResolveInput` fallback, `IsLoadingInputs` marshalling). Only the App-side template/projection is unverified for steps 2–5. Revisit when a Linn DS is reachable via the Story 5.2 adapter switch.
+
 ## Deferred from: code review of 3-1-soap-envelope-builder-fault-parser-and-invokeactionasync-wire-up (2026-06-03)
 
 - **`$"unexpected status {(int)resp.StatusCode}"` — string interpolation in diagnostic message** [`src/ohSpy.Core/Http/UpnpHttpClient.cs:192`] — pre-existing from Story 1.3 baseline; Pattern 11 purists would keep the status-code out of the message (it's already in `DiagnosticContext.StatusCode`). Low cosmetic impact; revisit when a diagnostic-message cleanup pass is warranted.

@@ -1,12 +1,16 @@
 namespace ohSpy.Core.ViewModels;
 
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ohSpy.Core.Devices;
 using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Http;
 using ohSpy.Core.Models;
+using ohSpy.Core.Scpd;
 using ohSpy.Core.Threading;
 
 /// <summary>
@@ -20,12 +24,19 @@ using ohSpy.Core.Threading;
 /// </summary>
 public sealed partial class InvocationPopupViewModel : ObservableObject, IDisposable
 {
+    // Numeric SCPD dataTypes that support a range spinner (AC-3.3.4; epic L1445). Case-insensitive;
+    // float/r4/r8/number are deliberately excluded in v1 (they fall to free-form text — PRD §7).
+    private static readonly HashSet<string> NumericDataTypes =
+        new(StringComparer.OrdinalIgnoreCase) { "ui1", "ui2", "ui4", "i1", "i2", "i4", "int" };
+
     private readonly ScpdAction _action;
     private readonly ServiceDescription _parentService;
+    private readonly RegistryEntry _parentEntry;
     private readonly IUpnpHttpClient _http;
     private readonly IUiDispatcher _ui;
     private readonly IDiagnosticEmitter _diag;
     private readonly IDeviceRegistry _registry;
+    private readonly IScpdParser _scpd;
 
     private readonly Guid _uuid;                 // snapshot for the diagnostic Identity column + banner match
     private readonly Uri? _controlUrl;           // resolved ONCE; null ⇒ malformed → short-circuit to TransportError
@@ -50,6 +61,12 @@ public sealed partial class InvocationPopupViewModel : ObservableObject, IDispos
     [ObservableProperty] private bool _isDeviceGone;
     [ObservableProperty] private string _deviceGoneText = "";
 
+    /// <summary>True while <see cref="InitializeAsync"/> fetches+parses the SCPD state table to upgrade
+    /// the ctor's text-only inputs into constrained variants (AC-3.3.1). Drives a "Loading…" hint
+    /// (App projects to Visibility). Cleared — always marshalled via <c>_ui.Post</c> — when the load
+    /// settles (success or fallback). False for argument-less actions (nothing to load).</summary>
+    [ObservableProperty] private bool _isLoadingInputs;
+
     public InvocationPopupViewModel(
         ScpdAction action,
         ServiceDescription parentService,
@@ -57,14 +74,17 @@ public sealed partial class InvocationPopupViewModel : ObservableObject, IDispos
         IUpnpHttpClient http,
         IUiDispatcher ui,
         IDiagnosticEmitter diag,
-        IDeviceRegistry registry)
+        IDeviceRegistry registry,
+        IScpdParser scpd)
     {
         _action = action;
         _parentService = parentService;
+        _parentEntry = parentEntry;
         _http = http;
         _ui = ui;
         _diag = diag;
         _registry = registry;
+        _scpd = scpd;
 
         _uuid = parentEntry.Uuid;
 
@@ -77,9 +97,15 @@ public sealed partial class InvocationPopupViewModel : ObservableObject, IDispos
         // URL must not crash the popup; InvokeAsync short-circuits to a TransportErrorResult.
         _controlUrl = Uri.TryCreate(parentEntry.LocationUrl, parentService.ControlUrl, out var u) ? u : null;
 
-        // FR-026: one input row per declared input arg, in declared order.
+        // FR-026: one input row per declared input arg, in declared order. These are the text-only
+        // FALLBACK (the 3.2 behaviour); InitializeAsync upgrades them to constrained variants once the
+        // SCPD state table is fetched+parsed. If init fails, these stay — defensive (AC-3.3.1 #4).
         foreach (var arg in action.Inputs)
             Inputs.Add(new ArgumentInputViewModel(arg));
+
+        // AC-3.3.1 #1: show "Loading…" only when there is something to resolve (an argument-less
+        // action has no state-table lookup to do). Set synchronously in the ctor (UI thread) — safe.
+        _isLoadingInputs = action.Inputs.Count > 0;
 
         // D7: link the popup CTS to the PUBLIC device token (DeviceCts is internal). Device removal
         // cancels DeviceToken → cancels this → the in-flight InvokeActionAsync throws OCE (swallowed).
@@ -107,6 +133,21 @@ public sealed partial class InvocationPopupViewModel : ObservableObject, IDispos
                 $"Invalid control URL (could not resolve '{_parentService.ControlUrl}' against the device location).");
             IsInvoking = false;
             return;
+        }
+
+        // AC-3.3.6: off-step / out-of-range client-side gate. Re-validate every range input and
+        // short-circuit BEFORE the first await (synchronous → no marshalling needed) if any is
+        // invalid. The inline ValidationError renders next to the offending input (App binds it).
+        var invalid = false;
+        foreach (var range in Inputs.OfType<AllowedValueRangeArgumentViewModel>())
+        {
+            range.Validate();
+            if (range.ValidationError is not null) invalid = true;
+        }
+        if (invalid)
+        {
+            IsInvoking = false;
+            return; // no SOAP request fires while a range input is off-step/out-of-range
         }
 
         var req = new SoapRequest(
@@ -215,6 +256,133 @@ public sealed partial class InvocationPopupViewModel : ObservableObject, IDispos
             IsInvoking = false;
         });
     }
+
+    /// <summary>
+    /// Story 3.3 async init (AC-3.3.1): fetch the parent service's SCPD, parse its state table, and
+    /// REBUILD <see cref="Inputs"/> with constrained variants (list dropdown / numeric range) resolved
+    /// from each argument's related state variable. Kicked off (fire-and-forget) by the App launcher
+    /// AFTER the window is constructed + activated. All failures are handled inside — the launcher
+    /// never observes an exception.
+    /// <para>
+    /// ⚠️ THREADING (the Story 3.2 smoke-crash class, <c>winui-no-synccontext-marshal-vm</c>): WinUI 3
+    /// installs no SynchronizationContext, so the continuation AFTER each await resumes on a
+    /// thread-pool thread — even with ConfigureAwait(true). Mutating <see cref="Inputs"/> /
+    /// <see cref="IsLoadingInputs"/> there pokes bound UIElements off-thread → RPC_E_WRONGTHREAD →
+    /// process crash. EVERY post-await observable mutation below is therefore marshalled via
+    /// <c>_ui.Post</c>. The pure <see cref="ResolveInput"/> projection (reads the table, news up VMs)
+    /// is thread-safe and runs off-thread; <c>_diag</c> is thread-safe too, so the ScpdParse emit may
+    /// stay off-thread. Copy of <c>InvokeAsync</c>'s terminal-marshal shape.
+    /// </para>
+    /// </summary>
+    public async Task InitializeAsync()
+    {
+        if (_action.Inputs.Count == 0)
+            return; // nothing to resolve — IsLoadingInputs is already false from the ctor
+
+        Uri scpdUrl;
+        try
+        {
+            scpdUrl = new Uri(_parentEntry.LocationUrl, _parentService.ScpdUrl);
+        }
+        catch (UriFormatException)
+        {
+            // Malformed SCPD URL — keep the ctor's text inputs (AC-3.3.1 #2), clear the flag (marshalled).
+            _ui.Post(() => IsLoadingInputs = false);
+            return;
+        }
+
+        try
+        {
+            var bytes = await _http.FetchScpdAsync(scpdUrl, _popupCts.Token).ConfigureAwait(false);
+            using var ms = new MemoryStream(bytes); // caller owns the stream — the parser does not dispose it
+            var table = await _scpd.ReadStateTableAsync(ms, _popupCts.Token).ConfigureAwait(false);
+
+            // Pure projection — safe off-thread; per-arg malformed cases emit ScpdParse here (_diag thread-safe).
+            var resolved = _action.Inputs.Select(a => ResolveInput(a, table, scpdUrl)).ToList();
+
+            // ⚠️ marshal the COLLECTION rebuild + flag clear (the only observable mutation).
+            _ui.Post(() =>
+            {
+                Inputs.Clear();
+                foreach (var input in resolved)
+                    Inputs.Add(input);
+                IsLoadingInputs = false;
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // Popup close / device gone (AC-3.3.1 #4): swallow — no diagnostic, no rebuild. Just clear
+            // the flag (marshalled). Mirrors InvokeAsync / LoadActionsAsync cancellation convention.
+            _ui.Post(() => IsLoadingInputs = false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Fetch or parse failed entirely (AC-3.3.1 #4): keep the ctor's text inputs, emit one
+            // ScpdParse warning, clear the flag (marshalled). Broad NFR-R3 defensive catch.
+            EmitScpdParse(scpdUrl, ex.Message);
+            _ui.Post(() => IsLoadingInputs = false);
+        }
+    }
+
+    /// <summary>
+    /// Pure variant resolver (AC-3.3.2..3.3.9): given a SCPD argument + the parsed state table, returns
+    /// the constrained <see cref="ArgumentInputViewModel"/> subclass, or the free-form text base when no
+    /// usable constraint applies. Per-arg malformed cases emit a <c>ScpdParse</c> warning (the rest of
+    /// the inputs still resolve normally). Thread-safe (reads the table, news up VMs, emits via the
+    /// thread-safe <c>_diag</c>) — safe to run inside <see cref="InitializeAsync"/>'s off-thread Select.
+    /// Open Question #1 resolved: a private method on the VM (the resolution is only ever needed here;
+    /// the popup-VM tests cover it end-to-end through InitializeAsync).
+    /// </summary>
+    private ArgumentInputViewModel ResolveInput(ScpdArgument arg, ScpdStateTable table, Uri scpdUrl)
+    {
+        // Miss → free-form text, no diagnostic (a name mismatch is legitimate, not malformed; AC-3.3.9).
+        if (!table.ByName.TryGetValue(arg.RelatedStateVariable, out var sv))
+            return new ArgumentInputViewModel(arg);
+
+        // FR-102 list variant. Wins even if a range is ALSO declared (malformed per UDA — AC-3.3.8).
+        if (sv.AllowedValueList is { Count: > 0 } list)
+        {
+            if (sv.AllowedValueRange is not null)
+                EmitScpdParse(scpdUrl, $"State variable '{sv.Name}' declares both <allowedValueList> and <allowedValueRange>; list wins (FR-102).");
+            return new AllowedValueListArgumentViewModel(arg, list, sv.DefaultValue);
+        }
+
+        // Present-but-empty list → text + ScpdParse (AC-3.3.3).
+        if (sv.AllowedValueList is { Count: 0 })
+        {
+            EmitScpdParse(scpdUrl, $"State variable '{sv.Name}' declares an empty <allowedValueList>; falling back to free-form text.");
+            return new ArgumentInputViewModel(arg);
+        }
+
+        // FR-103 range variant — requires a numeric dataType AND a coherent min/max/step (AC-3.3.4/.7).
+        if (sv.AllowedValueRange is { } r)
+        {
+            var numeric = NumericDataTypes.Contains(sv.DataType);
+            var coherent = r.Minimum <= r.Maximum && r.Step is null or > 0;
+            if (numeric && coherent)
+                return new AllowedValueRangeArgumentViewModel(arg, r.Minimum, r.Maximum, r.Step, sv.DefaultValue);
+
+            EmitScpdParse(scpdUrl,
+                FormattableString.Invariant(
+                    $"State variable '{sv.Name}' has an unusable <allowedValueRange> (dataType '{sv.DataType}', min {r.Minimum}, max {r.Maximum}, step {(r.Step is { } st ? st.ToString(CultureInfo.InvariantCulture) : "<none>")}); falling back to free-form text."));
+            return new ArgumentInputViewModel(arg);
+        }
+
+        // Neither constraint → free-form text, no diagnostic (AC-3.3.9 — not malformed).
+        return new ArgumentInputViewModel(arg);
+    }
+
+    // AC-3.3.1/.3/.7/.8 — structured ScpdParse warning (Pattern 11; never interpolate context into the
+    // message). DiagCategories.ScpdParse already exists (no new constant). _diag is thread-safe.
+    private void EmitScpdParse(Uri scpdUrl, string detail) =>
+        _diag.Warning(DiagCategories.ScpdParse, "SCPD state-table input resolution failed",
+            new DiagnosticContext
+            {
+                DeviceUuid = _uuid,
+                Url = scpdUrl.ToString(),
+                ServiceId = _parentService.ServiceId,
+                ErrorText = detail,
+            });
 
     private void OnDeviceRemoved(Guid uuid)
     {

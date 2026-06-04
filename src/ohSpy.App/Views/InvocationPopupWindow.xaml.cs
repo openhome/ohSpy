@@ -43,6 +43,9 @@ public sealed partial class InvocationPopupWindow : Window, INotifyPropertyChang
     // inheritance). Pattern 2: IsEnabled stays out of Core.
     public bool IsInputEnabled => !ViewModel.IsInvoking;
 
+    // ── Runtime-notifying (IsLoadingInputs, AC-3.3.1). ──
+    public Visibility LoadingInputsVisibility => ToVisibility(ViewModel.IsLoadingInputs);
+
     // ── Runtime-notifying (IsDeviceGone). ──
     public Visibility BannerVisibility => ToVisibility(ViewModel.IsDeviceGone);
 
@@ -73,6 +76,9 @@ public sealed partial class InvocationPopupWindow : Window, INotifyPropertyChang
             case nameof(InvocationPopupViewModel.IsInvoking):
                 Raise(nameof(InvokingVisibility));
                 Raise(nameof(IsInputEnabled));
+                break;
+            case nameof(InvocationPopupViewModel.IsLoadingInputs):
+                Raise(nameof(LoadingInputsVisibility));
                 break;
             case nameof(InvocationPopupViewModel.IsDeviceGone):
                 Raise(nameof(BannerVisibility));

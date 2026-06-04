@@ -123,7 +123,8 @@ internal static class ServiceRegistration
                 sp.GetRequiredService<IUpnpHttpClient>(),
                 sp.GetRequiredService<IUiDispatcher>(),
                 sp.GetRequiredService<IDiagnosticEmitter>(),
-                sp.GetRequiredService<IDeviceRegistry>()));
+                sp.GetRequiredService<IDeviceRegistry>(),
+                sp.GetRequiredService<IScpdParser>())); // Story 3.3: state-table fetch for constrained inputs
         // Concrete + interface (dual reg) so OnLaunched can set ShellWindow.
         services.AddSingleton<InvocationPopupLauncher>();
         services.AddSingleton<IInvocationPopupLauncher>(sp => sp.GetRequiredService<InvocationPopupLauncher>());
