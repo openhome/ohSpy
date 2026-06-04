@@ -1265,6 +1265,8 @@ public interface IDeviceRegistry
 
 ### Decision 10 — Window Ownership Mechanism
 
+> *Revised 2026-06-04 by [Amendment A31 — Popups float in free z-order; no Win32 owner link](#amendment-a31--popups-float-in-free-z-order-no-win32-owner-link-fr-046--decision-10-revision). The Win32 owner link (`GWLP_HWNDPARENT`) pinned popups **always above** the shell, which proved confusing — clicking the shell could never bring it forward over an open popup. `Adopt` no longer sets the owner link: a popup opens on top via `Activate()` then floats in normal z-order, and **close-with-parent** is re-implemented as an explicit `parent.Closed` handler. The always-above, no-push-behind, and minimise/restore-with-parent behaviours below (and AC-10.1/10.3/10.4) are superseded; the `Activate()`-then-`Adopt` pattern, the `GetChildrenOf` introspection seam, and close-with-parent (now AC-10.2, handler-based) stand. The interop snippet below is historical.*
+
 **Chosen:** Custom `IWindowOwnershipManager` service in `ohSpy.App` that encapsulates the Win32 owner relationship (`SetWindowLongPtr(GWLP_HWNDPARENT)`) for every popup. Order of operations is `child.Activate()` then `_windowOwnership.Adopt(child, _shellWindow)` — pattern applied uniformly across all four popup types.
 
 **Why interop is required:** WinUI 3's `Window` doesn't expose an `Owner` property (unlike WPF). The four FR-046 behaviours (z-order above parent, no-push-behind on focus, minimise/restore together, close-with-parent) are OS-delivered by the Win32 owner relationship — but the relationship is only accessible via `SetWindowLongPtr`. Centralising the interop in one service makes the FR-046 contract a pattern, not boilerplate.
@@ -2987,6 +2989,31 @@ UPnP UDNs are opaque strings (`uuid:` + an identifier; UDA recommends but does n
 **Supersedes** Amendment A28's `UdnMatches(string udn, Guid uuid)` signature: the helper is now `UdnMatches(string descUdn, string registeredUdn)` (strip `uuid:` from both, `OrdinalIgnoreCase`) — no Guid parse.
 
 **Applied to:** `SsdpParser`, `SsdpAnnouncement`, `DiscoveryService`, `DeviceRegistry`/`IDeviceRegistry`/`RegistryEntry`, `EagerDescriptionDispatcher`, `DiagnosticContext`/`DiagnosticRingSink`/`IDiagnosticIdentityLookup`/`RegistryIdentityLookup`/`NullIdentityLookup`, `DeviceNodeViewModel`/`DeviceTreeViewModel`/`ServiceNodeViewModel`/`BrowserLaunch`, `PropertiesViewModel`/`InvocationPopupViewModel`/`SubscriptionPopupViewModel`, `SsdpLogEntry`/`SsdpLogViewModel`, `SubscriptionClient` (identity emits only). Decision 9 + §4.1 component bullet reworded "UUID-keyed" → "UDN-keyed (string identity, OrdinalIgnoreCase)".
+
+---
+
+### Amendment A31 — Popups float in free z-order; no Win32 owner link (FR-046 / Decision 10 revision)
+
+**Source:** Story 5.2 keystone-smoke follow-up (2026-06-04, live Linn network) — Project Lead found the pinned z-order confusing during use.
+
+The original Decision 10 established the Win32 owner relationship via `SetWindowLongPtr(GWLP_HWNDPARENT)`. The OS honours an owner link by keeping the owned window **always above** its owner, so clicking the shell could never bring it in front of an open popup. FR-046's "z-order above parent / no-push-behind on focus" behaviour was therefore *too strong*: operators expect a popup to open on top but then float freely (e.g. open an action-invocation popup, then click the device tree → the shell should come forward over the popup).
+
+**Revision:** `WindowOwnershipManager.Adopt` no longer sets the owner link. A popup opens on top via its existing `child.Activate()` (the canonical `Activate()`-then-`Adopt` order is unchanged), then participates in **normal z-order** — the shell can be clicked back in front of it and vice-versa. The one ownership behaviour worth keeping, **close-with-parent**, is re-implemented explicitly: a per-child `parent.Closed` handler closes the child (unhooked if the child closes first), so closing the shell still tears down its popups with no orphaned windows. The `GetChildrenOf` / `_ownership` introspection seam is retained for tracking.
+
+**Dropped (consequences of removing the owner link, all accepted by the Project Lead):** always-above, no-push-behind on focus, and minimise/restore-with-parent. Modality was never in scope (popups remain independently activatable). The `GWLP_HWNDPARENT` const and the `SetWindowLongPtr` P/Invoke are removed; `WindowOwnershipManager` is no longer `partial`.
+
+**FR-046 behaviours after A31:**
+
+| FR-046 behaviour | After A31 |
+|---|---|
+| Appears above parent on show | ✅ Retained — via `child.Activate()` (foreground on open), not an owner link |
+| Stays above parent on focus shift (no-push-behind) | ❌ **Removed** — popups float in normal z-order |
+| Minimises/restores with parent | ❌ **Removed** — independent windows |
+| Closes when parent closes | ✅ Retained — now an explicit `parent.Closed` handler, not OS-delivered |
+
+**Supersedes:** Decision 10's "four OS-delivered behaviours" framing, its FR-046 behaviours table, and AC-10.1 / AC-10.3 / AC-10.4. **AC-10.2** (close-with-parent) and **AC-10.5** (`Activate()`-then-`Adopt` at all popup sites) stand. The z-order manual-test now reads: open a popup, click the shell → shell comes forward over the popup; re-click the popup → it comes forward.
+
+**Applied to:** `WindowOwnershipManager` (App). No Core change; no unit-test change (App windowing layer — smoke-verified 2026-06-04).
 
 ---
 

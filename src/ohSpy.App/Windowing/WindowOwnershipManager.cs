@@ -1,64 +1,63 @@
 namespace ohSpy.App.Windowing;
 
-using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 
 /// <summary>
-/// Establishes the Win32 owner relationship (FR-046) for every secondary window. WinUI 3's
-/// <see cref="Window"/> exposes no Owner property (unlike WPF), so the four FR-046 behaviours
-/// (z-order above parent, no-push-behind on focus, minimise/restore together, close-with-parent)
-/// are delivered by SetWindowLongPtr(GWLP_HWNDPARENT) — centralised here so the contract is a
-/// pattern, not boilerplate (Decision 10).
+/// Tracks the shell→popup relationship for every secondary window and gives popups a free,
+/// non-pinned z-order (FR-046, amended 2026-06-04). WinUI 3's <see cref="Window"/> exposes no
+/// Owner property (unlike WPF). We deliberately do NOT establish the Win32 owner link
+/// (SetWindowLongPtr GWLP_HWNDPARENT): that link forces an owned window to stay ALWAYS above its
+/// owner, so clicking the shell could never bring it in front of an open popup. Instead a popup
+/// simply opens on top (its <c>Activate()</c> makes it foreground) and then participates in normal
+/// z-order — click the shell and it comes forward over the popup. The one ownership behaviour worth
+/// keeping, close-with-parent, is wired here explicitly so closing the shell tears down its popups
+/// rather than leaving orphaned windows alive.
 /// </summary>
 public interface IWindowOwnershipManager
 {
     /// <summary>
-    /// Establish FR-046 ownership of <paramref name="child"/> by <paramref name="parent"/>.
-    /// MUST be called AFTER <c>child.Activate()</c> — calling SetWindowLongPtr before Activate
-    /// leaves the relationship undefined in WinUI 3 (empirically required; AC-10.1). Every popup
-    /// creation site (Epics 2-5) follows window.Activate() THEN Adopt(window, shellWindow).
+    /// Track <paramref name="child"/> as a popup of <paramref name="parent"/> and wire
+    /// close-with-parent. Call AFTER <c>child.Activate()</c> (the child HWND must be realised, and
+    /// activating it is what puts the popup on top on open). Every popup creation site (Epics 2-5)
+    /// follows window.Activate() THEN Adopt(window, shellWindow).
     /// </summary>
     void Adopt(Window child, Window parent);
 
-    /// <summary>Child windows currently owned by <paramref name="parent"/> (testability / introspection).</summary>
+    /// <summary>Child windows currently tracked under <paramref name="parent"/> (testability / introspection).</summary>
     IReadOnlyList<IntPtr> GetChildrenOf(Window parent);
 }
 
-internal sealed partial class WindowOwnershipManager : IWindowOwnershipManager
+internal sealed class WindowOwnershipManager : IWindowOwnershipManager
 {
-    private const int GWLP_HWNDPARENT = -8;
     private readonly Dictionary<IntPtr, List<IntPtr>> _ownership = new();
-
-    // Source-generated P/Invoke (.NET 7+). SetWindowLongPtrW is the wide (Unicode) entry point;
-    // IntPtr is the correct pointer-sized type on both x64 and ARM64.
-    [LibraryImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
-    private static partial IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
     // CANONICAL POPUP-OPEN PATTERN (Decision 10 / AC-10.1) — follow this VERBATIM at every popup
     // creation site (Epics 2-5):
     //
     //     var window = new XxxPopupWindow(vm);
-    //     window.Activate();                       // (1) realise the HWND
-    //     _windowOwnership.Adopt(window, shell);   // (2) THEN establish FR-046 ownership
+    //     window.Activate();                       // (1) realise the HWND + put the popup on top
+    //     _windowOwnership.Adopt(window, shell);   // (2) THEN track it + wire close-with-parent
     //
-    // The order is LOAD-BEARING: SetWindowLongPtr(GWLP_HWNDPARENT) before Activate() leaves the
-    // owner relationship undefined in WinUI 3 (the child HWND is not fully realised until Activate).
+    // Activate() (not an owner link) is what makes the popup foreground on open; after that the
+    // popup floats freely and the shell can be clicked back in front of it.
     public void Adopt(Window child, Window parent)
     {
         var childHwnd = WinRT.Interop.WindowNative.GetWindowHandle(child);
         var parentHwnd = WinRT.Interop.WindowNative.GetWindowHandle(parent);
 
-        // FR-046: the OS owner relationship. After this the OS delivers z-order, no-push-behind,
-        // minimise/restore-with-parent, and close-with-parent for free — no event handlers needed.
-        SetWindowLongPtr(childHwnd, GWLP_HWNDPARENT, parentHwnd);
-
         if (!_ownership.TryGetValue(parentHwnd, out var children))
             _ownership[parentHwnd] = children = new();
         children.Add(childHwnd);
 
-        // Prune tracking when the child closes (the OS has already torn down the owner link).
+        // Close-with-parent: when the shell closes, close its popups (no orphaned windows kept alive).
+        // One handler per child so each closes exactly itself; unhooked if the child closes first.
+        void OnParentClosed(object sender, WindowEventArgs args) => child.Close();
+        parent.Closed += OnParentClosed;
+
+        // Prune tracking when the child closes, and stop trying to close an already-gone child.
         child.Closed += (_, _) =>
         {
+            parent.Closed -= OnParentClosed;
             if (_ownership.TryGetValue(parentHwnd, out var list))
                 list.Remove(childHwnd);
         };
