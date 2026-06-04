@@ -13,6 +13,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
     private readonly ISsdpTransport _transport;
     private readonly IDiscoveryService _discovery;
     private readonly IEventCallbackHost _callbackHost;
+    private readonly ISubscriptionClient _subscriptionClient;
     private readonly IDiagnosticEmitter _diag;
 
     private AdapterScope? _adapterScope;
@@ -30,6 +31,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
         ISsdpTransport transport,
         IDiscoveryService discovery,
         IEventCallbackHost callbackHost,
+        ISubscriptionClient subscriptionClient,
         IDeviceRegistry registry,
         IUiDispatcher ui,
         IDiagnosticEmitter diag,
@@ -39,6 +41,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
         _transport    = transport;
         _discovery    = discovery;
         _callbackHost = callbackHost;
+        _subscriptionClient = subscriptionClient;
         _diag         = diag;
         _deviceTree  = new DeviceTreeViewModel(registry, ui, nodeServices);
         _ssdpLog     = new SsdpLogViewModel(discovery, ui); // subscribes to AnnouncementReceived
@@ -74,6 +77,12 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
                 // can announce CallbackBaseUrl. Lifecycle is owned here (disposed in DisposeAsync).
                 await _callbackHost.StartAsync(scope.CurrentAdapterIPv4, scope.AdapterToken)
                                    .ConfigureAwait(false);
+
+                // Story 4.2 — hand the per-AdapterScope token to the subscription client (the DI
+                // singleton can't inject it). This is the D7 "level above" used for the UNSUBSCRIBE-on-
+                // active-close + the adapter-switch lapse cascade. Story 5.2's atomic rebind re-calls
+                // this on the new adapter's token (and the adapter-token cancel lapses all live subs).
+                _subscriptionClient.SetAdapterContext(scope.AdapterToken);
 
                 await _discovery.StartAsync(scope.AdapterToken, scope.AdapterToken)
                                 .ConfigureAwait(false);

@@ -80,6 +80,15 @@ internal static class ServiceRegistration
         // starts it once scope.CurrentAdapterIPv4 is known; ShellViewModel.DisposeAsync drains it.
         services.AddSingleton<IEventCallbackHost, EventCallbackHost>();
 
+        // Story 4.2 — GENA subscription lifecycle orchestrator (the first consumer of the 4.1 host +
+        // the 1.3 GENA verbs). Singleton (IEventCallbackHost precedent): it subscribes ONCE to the
+        // host's NotifyReceived for its lifetime. The DI singleton cannot inject the per-AdapterScope
+        // token at construction, so ShellViewModel.RunStartAsync calls SetAdapterContext(scope.AdapterToken)
+        // right after _callbackHost.StartAsync (the level-above token for the D7 UNSUBSCRIBE-on-close +
+        // the adapter-switch lapse cascade). Story 5.2's atomic rebind must re-SetAdapterContext on the
+        // new adapter (the adapter-token cancel already cascades into every renew loop → AdapterSwitch lapse).
+        services.AddSingleton<ISubscriptionClient, SubscriptionClient>();
+
         // Story 2.2 — Network adapter enumeration (FR-048). Singletons: stateless query
         // services. AdapterScope is NOT registered here — it is constructed by the
         // app-startup orchestrator (App.OnLaunched; relocated to ShellViewModel in 2.5)

@@ -85,14 +85,53 @@ internal sealed class StubUpnpHttpClient : IUpnpHttpClient
         return await InvokeResponder(request, ct).ConfigureAwait(false);
     }
 
-    public Task<SubscribeResponse> SubscribeAsync(
-        Uri eventSubUrl, Uri callbackUrl, TimeSpan requestedTimeout, CancellationToken ct) =>
-        throw new NotSupportedException();
+    // ── Story 4.2 — controllable GENA verbs (mirror InvokeResponder/InvokedRequests) ──
 
-    public Task<SubscribeResponse> RenewSubscriptionAsync(
-        Uri eventSubUrl, string sid, TimeSpan requestedTimeout, CancellationToken ct) =>
-        throw new NotSupportedException();
+    /// <summary>One recorded GENA call (the request that WENT OUT — Epic 2 "assert the outbound" lesson).</summary>
+    public sealed record GenaCall(string Verb, Uri EventSubUrl, Uri? CallbackUrl, string? Sid, TimeSpan RequestedTimeout);
 
-    public Task UnsubscribeAsync(Uri eventSubUrl, string sid, CancellationToken ct) =>
-        throw new NotSupportedException();
+    private readonly List<GenaCall> _genaCalls = new();
+
+    /// <summary>Every SUBSCRIBE/RENEW/UNSUBSCRIBE call, in order.</summary>
+    public IReadOnlyList<GenaCall> GenaCalls
+    {
+        get { lock (_gate) { return _genaCalls.ToArray(); } }
+    }
+
+    public int CountOf(string verb)
+    {
+        lock (_gate) { return _genaCalls.Count(c => c.Verb == verb); }
+    }
+
+    /// <summary>Supplies the SUBSCRIBE result. Default: throws so opt-out tests fail loudly.</summary>
+    public Func<Uri, Uri, TimeSpan, CancellationToken, Task<SubscribeResponse>>? SubscribeResponder { get; set; }
+
+    /// <summary>Supplies the RENEW result. Default: throws so opt-out tests fail loudly.</summary>
+    public Func<Uri, string, TimeSpan, CancellationToken, Task<SubscribeResponse>>? RenewResponder { get; set; }
+
+    /// <summary>Supplies the UNSUBSCRIBE behaviour. Default: completes (best-effort success).</summary>
+    public Func<Uri, string, CancellationToken, Task>? UnsubscribeResponder { get; set; }
+
+    public async Task<SubscribeResponse> SubscribeAsync(
+        Uri eventSubUrl, Uri callbackUrl, TimeSpan requestedTimeout, CancellationToken ct)
+    {
+        lock (_gate) { _genaCalls.Add(new GenaCall("SUBSCRIBE", eventSubUrl, callbackUrl, null, requestedTimeout)); }
+        if (SubscribeResponder is null) throw new NotSupportedException();
+        return await SubscribeResponder(eventSubUrl, callbackUrl, requestedTimeout, ct).ConfigureAwait(false);
+    }
+
+    public async Task<SubscribeResponse> RenewSubscriptionAsync(
+        Uri eventSubUrl, string sid, TimeSpan requestedTimeout, CancellationToken ct)
+    {
+        lock (_gate) { _genaCalls.Add(new GenaCall("RENEW", eventSubUrl, null, sid, requestedTimeout)); }
+        if (RenewResponder is null) throw new NotSupportedException();
+        return await RenewResponder(eventSubUrl, sid, requestedTimeout, ct).ConfigureAwait(false);
+    }
+
+    public async Task UnsubscribeAsync(Uri eventSubUrl, string sid, CancellationToken ct)
+    {
+        lock (_gate) { _genaCalls.Add(new GenaCall("UNSUBSCRIBE", eventSubUrl, null, sid, TimeSpan.Zero)); }
+        if (UnsubscribeResponder is null) return;
+        await UnsubscribeResponder(eventSubUrl, sid, ct).ConfigureAwait(false);
+    }
 }
