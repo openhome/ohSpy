@@ -3,7 +3,7 @@ namespace ohSpy.Core.Devices;
 using ohSpy.Core.Models;
 
 /// <summary>
-/// One UUID-keyed device in the registry (Decision 9). Carries SSDP metadata plus a
+/// One UDN-keyed device in the registry (Decision 9 / Amendment A30). Carries SSDP metadata plus a
 /// strict <see cref="DescriptionFetchState"/> machine: <c>Pending → InFlight →
 /// Loaded/Failed</c>, with <c>Loaded</c>/<c>Failed</c> terminal. Mutating methods are
 /// <c>internal</c> (only Core's dispatcher + tests drive the machine) and UI-thread-only
@@ -16,8 +16,8 @@ using ohSpy.Core.Models;
 /// </summary>
 public sealed class RegistryEntry
 {
-    /// <summary>The root device UUID (from the SSDP USN), the registry key.</summary>
-    public Guid Uuid { get; }
+    /// <summary>The root device UDN (the opaque <c>uuid:&lt;body&gt;</c> string from the SSDP USN), the registry key.</summary>
+    public string Udn { get; }
 
     /// <summary>The SSDP <c>LOCATION</c> URL the description is fetched from.</summary>
     public Uri LocationUrl { get; }
@@ -69,9 +69,9 @@ public sealed class RegistryEntry
     /// registry calls <see cref="RefreshSsdpMetadata"/> immediately to seed metadata and
     /// bump the count to 1.
     /// </summary>
-    internal RegistryEntry(Guid uuid, Uri locationUrl, DateTime nowUtc, CancellationToken adapterToken)
+    internal RegistryEntry(string udn, Uri locationUrl, DateTime nowUtc, CancellationToken adapterToken)
     {
-        Uuid = uuid;
+        Udn = udn;
         LocationUrl = locationUrl;
         FirstSeenUtc = nowUtc;
         LastSeenUtc = nowUtc;

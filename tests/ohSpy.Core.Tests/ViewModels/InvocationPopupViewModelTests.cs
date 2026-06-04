@@ -18,7 +18,7 @@ using ohSpy.Core.ViewModels;
 public sealed class InvocationPopupViewModelTests
 {
     private static readonly Uri DeviceLocation = new("http://192.168.1.100:49152/desc.xml");
-    private static readonly Guid DeviceUuid = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private const string DeviceUdn = "uuid:22222222-2222-2222-2222-222222222222";
 
     private static ScpdArgument In(string name) => new(name, "Var", ScpdDirection.In);
 
@@ -31,8 +31,8 @@ public sealed class InvocationPopupViewModelTests
         string controlUrl = "/RC/ctrl") =>
         new(serviceType, "urn:upnp-org:serviceId:RenderingControl", "/RC/Scpd.xml", controlUrl, "/RC/evt");
 
-    private static RegistryEntry Entry(Guid? uuid = null, Uri? location = null, CancellationToken token = default) =>
-        new(uuid ?? DeviceUuid, location ?? DeviceLocation, DateTime.UtcNow, token);
+    private static RegistryEntry Entry(string? udn = null, Uri? location = null, CancellationToken token = default) =>
+        new(udn ?? DeviceUdn, location ?? DeviceLocation, DateTime.UtcNow, token);
 
     private static InvocationPopupViewModel MakeVm(
         ScpdAction action,
@@ -227,7 +227,7 @@ public sealed class InvocationPopupViewModelTests
         var entry = diag.Entries.Should().ContainSingle().Subject;
         entry.Severity.Should().Be("Warning");
         entry.Category.Should().Be(DiagCategories.SoapFault);
-        entry.Context.DeviceUuid.Should().Be(DeviceUuid, "the popup emit carries the UUID (reconciliation #4)");
+        entry.Context.DeviceUuid.Should().Be(DeviceUdn, "the popup emit carries the UUID (reconciliation #4)");
         entry.Context.ActionName.Should().Be("SetVolume");
         entry.Context.StatusCode.Should().Be(500);
         entry.Context.ErrorText.Should().Be("402: Invalid Args");
@@ -249,7 +249,7 @@ public sealed class InvocationPopupViewModelTests
         vm.Result.Should().BeOfType<TransportErrorResult>();
         var entry = diag.Entries.Should().ContainSingle().Subject;
         entry.Category.Should().Be(DiagCategories.HttpTimeout);
-        entry.Context.DeviceUuid.Should().Be(DeviceUuid);
+        entry.Context.DeviceUuid.Should().Be(DeviceUdn);
         entry.Context.ActionName.Should().Be("GetVolume");
         entry.Context.Elapsed.Should().Be(TimeSpan.FromSeconds(6));
         entry.Context.Budget.Should().Be(TimeSpan.FromSeconds(5));
@@ -269,7 +269,7 @@ public sealed class InvocationPopupViewModelTests
         vm.Result.Should().BeOfType<TransportErrorResult>();
         var entry = diag.Entries.Should().ContainSingle().Subject;
         entry.Category.Should().Be(DiagCategories.SoapInvoke);
-        entry.Context.DeviceUuid.Should().Be(DeviceUuid);
+        entry.Context.DeviceUuid.Should().Be(DeviceUdn);
         entry.Context.StatusCode.Should().Be(503);
     }
 
@@ -346,7 +346,7 @@ public sealed class InvocationPopupViewModelTests
     {
         var vm = MakeVm(Action("GetVolume"), out _, out _, out var registry);
 
-        registry.RaiseDeviceRemoved(DeviceUuid);
+        registry.RaiseDeviceRemoved(DeviceUdn);
 
         vm.IsDeviceGone.Should().BeTrue();
         vm.DeviceGoneText.Should().NotBeEmpty();
@@ -358,7 +358,7 @@ public sealed class InvocationPopupViewModelTests
     {
         var vm = MakeVm(Action("GetVolume"), out _, out _, out var registry);
 
-        registry.RaiseDeviceRemoved(Guid.NewGuid());
+        registry.RaiseDeviceRemoved($"uuid:{Guid.NewGuid()}");
 
         vm.IsDeviceGone.Should().BeFalse();
     }
@@ -400,7 +400,7 @@ public sealed class InvocationPopupViewModelTests
         var vm = MakeVm(Action("GetVolume"), out _, out _, out var registry);
 
         vm.Dispose();
-        registry.RaiseDeviceRemoved(DeviceUuid); // handler already removed
+        registry.RaiseDeviceRemoved(DeviceUdn); // handler already removed
 
         vm.IsDeviceGone.Should().BeFalse("Dispose unsubscribed from DeviceRemoved");
     }
@@ -661,7 +661,7 @@ public sealed class InvocationPopupViewModelTests
         vm.IsLoadingInputs.Should().BeFalse();
         var entry = diag.Entries.Should().ContainSingle().Subject;
         entry.Category.Should().Be(DiagCategories.ScpdParse);
-        entry.Context.DeviceUuid.Should().Be(DeviceUuid);
+        entry.Context.DeviceUuid.Should().Be(DeviceUdn);
         entry.Context.ServiceId.Should().Be("urn:upnp-org:serviceId:RenderingControl");
     }
 

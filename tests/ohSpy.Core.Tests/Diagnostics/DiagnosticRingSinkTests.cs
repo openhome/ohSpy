@@ -74,9 +74,9 @@ public class DiagnosticRingSinkTests
     [Trait("ac", "AC-8.3")]
     public void IdentityLabel_RegistryHitWithFriendlyName_ResolvesToFriendlyName()
     {
-        var uuid = Guid.NewGuid();
+        var udn = $"uuid:{Guid.NewGuid()}";
         var sink = new DiagnosticRingSink(new InlineUiDispatcher(), new StaticIdentityLookup("My Linn DS"));
-        sink.Push(MakeEntry(new DiagnosticContext { DeviceUuid = uuid }));
+        sink.Push(MakeEntry(new DiagnosticContext { DeviceUuid = udn }));
         sink.Entries[0].IdentityLabel.Should().Be("My Linn DS");
     }
 
@@ -84,10 +84,10 @@ public class DiagnosticRingSinkTests
     [Trait("ac", "AC-8.3")]
     public void IdentityLabel_RegistryMiss_ResolvesToUuidColonForm()
     {
-        var uuid = Guid.NewGuid();
+        var udn = $"uuid:{Guid.NewGuid()}";
         var sink = new DiagnosticRingSink(new InlineUiDispatcher(), new StaticIdentityLookup(null));
-        sink.Push(MakeEntry(new DiagnosticContext { DeviceUuid = uuid }));
-        sink.Entries[0].IdentityLabel.Should().Be($"uuid:{uuid}");
+        sink.Push(MakeEntry(new DiagnosticContext { DeviceUuid = udn }));
+        sink.Entries[0].IdentityLabel.Should().Be(udn);
     }
 
     [Fact]
@@ -95,16 +95,16 @@ public class DiagnosticRingSinkTests
     [Trait("fr", "FR-041")]
     public void IdentityLabel_SnapshotSemantics_DoesNotUpdateOnLaterRegistryChange()
     {
-        var uuid = Guid.NewGuid();
+        var udn = $"uuid:{Guid.NewGuid()}";
         var lookup = new MutableIdentityLookup("X");
         var sink = new DiagnosticRingSink(new InlineUiDispatcher(), lookup);
 
-        sink.Push(MakeEntry(new DiagnosticContext { DeviceUuid = uuid }));
+        sink.Push(MakeEntry(new DiagnosticContext { DeviceUuid = udn }));
         sink.Entries[0].IdentityLabel.Should().Be("X");
 
         // Registry name changes between pushes.
         lookup.Name = "Y";
-        sink.Push(MakeEntry(new DiagnosticContext { DeviceUuid = uuid }));
+        sink.Push(MakeEntry(new DiagnosticContext { DeviceUuid = udn }));
 
         // FR-041 snapshot invariant: the FIRST row's label MUST still be "X" — later
         // registry mutations do not update existing rows. The NEW row (at index 0 now,
@@ -170,12 +170,12 @@ public class DiagnosticRingSinkTests
 
     private sealed class StaticIdentityLookup(string? name) : IDiagnosticIdentityLookup
     {
-        public string? TryGetFriendlyName(Guid deviceUuid) => name;
+        public string? TryGetFriendlyName(string udn) => name;
     }
 
     private sealed class MutableIdentityLookup(string initialName) : IDiagnosticIdentityLookup
     {
         public string? Name { get; set; } = initialName;
-        public string? TryGetFriendlyName(Guid deviceUuid) => Name;
+        public string? TryGetFriendlyName(string udn) => Name;
     }
 }

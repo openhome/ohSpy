@@ -5,7 +5,8 @@ using System.Linq;
 using ohSpy.Core.Threading;
 
 /// <summary>
-/// UUID-keyed device registry (Decision 9). Mutations (<see cref="OnAlive"/>,
+/// UDN-keyed device registry (Decision 9 / Amendment A30 — string identity, OrdinalIgnoreCase).
+/// Mutations (<see cref="OnAlive"/>,
 /// <see cref="OnByebye"/>, <see cref="Remove"/>, the <c>Raise*</c> helpers) run on the UI
 /// thread (callers marshal via <see cref="IUiDispatcher.Post"/>; the mutators assert it).
 /// <para>
@@ -23,11 +24,12 @@ using ohSpy.Core.Threading;
 /// </summary>
 internal sealed class DeviceRegistry(IUiDispatcher ui) : IDeviceRegistry
 {
-    private readonly ConcurrentDictionary<Guid, RegistryEntry> _entries = new();
+    private readonly ConcurrentDictionary<string, RegistryEntry> _entries =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public event Action<RegistryEntry>? DeviceLoaded;
     public event Action<RegistryEntry>? DeviceUpdated;
-    public event Action<Guid>? DeviceRemoved;
+    public event Action<string>? DeviceRemoved;
 
     /// <summary>
     /// Internal coordinator signal raised when a NEW entry is created. The
@@ -37,7 +39,7 @@ internal sealed class DeviceRegistry(IUiDispatcher ui) : IDeviceRegistry
     /// </summary>
     internal event Action<RegistryEntry>? EntryNeedsFetch;
 
-    public bool TryGetEntry(Guid uuid, out RegistryEntry entry) => _entries.TryGetValue(uuid, out entry!);
+    public bool TryGetEntry(string udn, out RegistryEntry entry) => _entries.TryGetValue(udn, out entry!);
 
     public int Count => _entries.Count;
 
@@ -46,38 +48,38 @@ internal sealed class DeviceRegistry(IUiDispatcher ui) : IDeviceRegistry
 
     /// <summary>
     /// Handles an alive announcement (call surface is DiscoveryService in Story 2.4). A new
-    /// UUID creates a Pending entry and raises <see cref="EntryNeedsFetch"/>; a known UUID
+    /// UDN creates a Pending entry and raises <see cref="EntryNeedsFetch"/>; a known UDN
     /// only refreshes metadata — no re-fetch (AC-9.4 / FR-043 cache invariant).
     /// </summary>
-    internal void OnAlive(Guid uuid, Uri location, DateTime nowUtc, string? server,
+    internal void OnAlive(string udn, Uri location, DateTime nowUtc, string? server,
         TimeSpan? maxAge, string? bootId, string? configId, CancellationToken adapterToken)
     {
         ui.AssertOnUiThread();
 
-        if (_entries.TryGetValue(uuid, out var existing))
+        if (_entries.TryGetValue(udn, out var existing))
         {
             existing.RefreshSsdpMetadata(nowUtc, server, maxAge, bootId, configId); // AC-9.4
             return;
         }
 
-        var entry = new RegistryEntry(uuid, location, nowUtc, adapterToken);
+        var entry = new RegistryEntry(udn, location, nowUtc, adapterToken);
         entry.RefreshSsdpMetadata(nowUtc, server, maxAge, bootId, configId); // seed metadata; AliveCount 0→1
-        _entries[uuid] = entry;
+        _entries[udn] = entry;
         EntryNeedsFetch?.Invoke(entry); // dispatcher schedules FetchAsync
     }
 
     /// <summary>Handles a byebye (FR-008): cancels the device's in-flight fetch (AC-7.2) and removes it.</summary>
-    internal void OnByebye(Guid uuid)
+    internal void OnByebye(string udn)
     {
         ui.AssertOnUiThread();
-        RemoveCore(uuid);
+        RemoveCore(udn);
     }
 
     /// <summary>Removes an entry (the dispatcher's mismatched-root path, AC-9.6). Idempotent.</summary>
-    internal void Remove(Guid uuid)
+    internal void Remove(string udn)
     {
         ui.AssertOnUiThread();
-        RemoveCore(uuid);
+        RemoveCore(udn);
     }
 
     /// <summary>Raises <see cref="DeviceLoaded"/> (called by the dispatcher after MarkLoaded).</summary>
@@ -95,7 +97,7 @@ internal sealed class DeviceRegistry(IUiDispatcher ui) : IDeviceRegistry
     }
 
     /// <summary>
-    /// Story 5.2 atomic adapter-switch reset (FR-050 step 6). Snapshots the current UUIDs FIRST, then
+    /// Story 5.2 atomic adapter-switch reset (FR-050 step 6). Snapshots the current UDNs FIRST, then
     /// removes each via the shared <see cref="RemoveCore"/> cascade — so a <see cref="DeviceRemoved"/>
     /// handler that re-reads the registry sees a consistent (shrinking) state and the removal semantics
     /// match byebye exactly (the popups' FR-037 path). Idempotent; a no-op on an empty registry.
@@ -104,22 +106,22 @@ internal sealed class DeviceRegistry(IUiDispatcher ui) : IDeviceRegistry
     {
         ui.AssertOnUiThread();
 
-        // Snapshot the keys before mutating so the per-UUID DeviceRemoved handlers (which may re-read
+        // Snapshot the keys before mutating so the per-UDN DeviceRemoved handlers (which may re-read
         // the registry) observe a consistent state, and so we never iterate a collection we mutate.
-        var uuids = _entries.Keys.ToArray();
-        foreach (var uuid in uuids)
+        var udns = _entries.Keys.ToArray();
+        foreach (var udn in udns)
         {
-            RemoveCore(uuid); // cancel + dispose DeviceCts + raise DeviceRemoved (byebye-identical)
+            RemoveCore(udn); // cancel + dispose DeviceCts + raise DeviceRemoved (byebye-identical)
         }
     }
 
-    private void RemoveCore(Guid uuid)
+    private void RemoveCore(string udn)
     {
-        if (_entries.TryRemove(uuid, out var entry))
+        if (_entries.TryRemove(udn, out var entry))
         {
             entry.DeviceCts.Cancel();   // AC-7.2: cancels THIS device's in-flight fetch only
             entry.DeviceCts.Dispose();  // release the linked-token callback on the adapter CTS
-            DeviceRemoved?.Invoke(uuid);
+            DeviceRemoved?.Invoke(udn);
         }
     }
 }

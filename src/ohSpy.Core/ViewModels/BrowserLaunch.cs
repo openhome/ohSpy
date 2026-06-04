@@ -18,14 +18,14 @@ internal static class BrowserLaunch
     /// failed (both paths having emitted a Warning).
     /// </summary>
     public static bool OpenInDefaultBrowser(
-        Uri url, IUriLauncher launcher, IDiagnosticEmitter diag, Guid deviceUuid)
+        Uri url, IUriLauncher launcher, IDiagnosticEmitter diag, string deviceUdn)
     {
         // Gap-3 whitelist: UPnP LOCATION / SCPDURL are http(s) per UDA 1.0. Anything else
         // (file:, javascript:, custom schemes) is refused defensively — never shell-opened.
         if (!IsHttpOrHttps(url))
         {
             diag.Warning(DiagCategories.ShellExecute, "Refused to open non-http(s) URL",
-                new DiagnosticContext { DeviceUuid = deviceUuid, Url = url.ToString() });
+                new DiagnosticContext { DeviceUuid = deviceUdn, Url = url.ToString() });
             return false;
         }
 
@@ -41,7 +41,7 @@ internal static class BrowserLaunch
             diag.Warning(DiagCategories.ShellExecute, "Failed to open URL in default browser",
                 new DiagnosticContext
                 {
-                    DeviceUuid = deviceUuid, Url = url.ToString(), ErrorText = ex.Message,
+                    DeviceUuid = deviceUdn, Url = url.ToString(), ErrorText = ex.Message,
                 });
             return false;
         }

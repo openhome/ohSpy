@@ -72,18 +72,26 @@ internal sealed class SsdpParser(IDiagnosticEmitter diag)
             // Unknown headers silently ignored (lenient, D4 vendor-noise philosophy)
         }
 
-        var uuid = ExtractUuid(usn);
+        var udn = ExtractUdn(usn);
 
-        return new SsdpAnnouncement(nt, nts, st, usn, uuid, location, cacheControlMaxAge, server, bootId, configId);
+        return new SsdpAnnouncement(nt, nts, st, usn, udn, location, cacheControlMaxAge, server, bootId, configId);
     }
 
-    internal static Guid? ExtractUuid(string? usn)
+    /// <summary>
+    /// Extracts the device UDN (the opaque <c>uuid:&lt;body&gt;</c> token) from an SSDP USN.
+    /// UPnP UDNs are opaque strings — RFC 4122 is only a SHOULD — so we do NOT parse to a
+    /// <see cref="Guid"/> (Amendment A30). Returns the full <c>uuid:&lt;body&gt;</c> with the
+    /// <c>::&lt;nt&gt;</c> suffix stripped and the <c>uuid:</c> prefix + body casing preserved
+    /// (matching <c>DeviceDescription.Udn</c>); returns null only when there is no <c>uuid:</c> token.
+    /// </summary>
+    internal static string? ExtractUdn(string? usn)
     {
         if (usn is null) return null;
-        var s = usn.StartsWith("uuid:", StringComparison.OrdinalIgnoreCase) ? usn[5..] : usn;
-        var colonPos = s.IndexOf(':', StringComparison.Ordinal);
-        if (colonPos >= 0) s = s[..colonPos];
-        return Guid.TryParse(s, out var g) ? g : null;
+        if (!usn.StartsWith("uuid:", StringComparison.OrdinalIgnoreCase)) return null;
+
+        // USN forms: "uuid:<body>" or "uuid:<body>::<nt>". Strip the "::<nt>" suffix; keep "uuid:".
+        var sepPos = usn.IndexOf("::", StringComparison.Ordinal);
+        return sepPos >= 0 ? usn[..sepPos] : usn;
     }
 
     private static TimeSpan? ParseMaxAge(string value)

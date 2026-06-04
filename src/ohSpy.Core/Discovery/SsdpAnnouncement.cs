@@ -10,7 +10,7 @@ public sealed record SsdpAnnouncement(
     string? NTS,
     string? ST,
     string? USN,
-    Guid? Uuid,
+    string? Udn,
     Uri? Location,
     TimeSpan? CacheControlMaxAge,
     string? Server,

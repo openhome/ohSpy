@@ -12,11 +12,11 @@ public partial class ServiceNodeViewModel : ObservableObject, INodeViewModel
 {
     private readonly ServiceDescription _service;
     private readonly Uri _deviceLocation;   // device LocationUrl — base for relative SCPDURL
-    private readonly Guid _deviceUuid;       // for the FR-041 Identity column on diagnostics
+    private readonly string _deviceUdn;      // for the FR-041 Identity column on diagnostics
     private readonly CancellationToken _deviceToken; // D7 device-level cancellation (byebye/adapter switch)
     private readonly NodeServices _services;
     // Story 3.2: the device entry, threaded DeviceNode → ServiceNode → ActionNode so the action
-    // leaf can hand LocationUrl + Uuid + DeviceToken to the invocation popup in one object.
+    // leaf can hand LocationUrl + Udn + DeviceToken to the invocation popup in one object.
     private readonly RegistryEntry _parentEntry;
 
     private int _loadStarted; // 0 = not started, 1 = started (Interlocked guard — AC-2.6.6)
@@ -35,12 +35,12 @@ public partial class ServiceNodeViewModel : ObservableObject, INodeViewModel
 
     // CancellationToken is last per CA1068 / Dev Notes Pattern 6 ("deviceToken, passed last").
     public ServiceNodeViewModel(
-        ServiceDescription service, Uri deviceLocation, Guid deviceUuid,
+        ServiceDescription service, Uri deviceLocation, string deviceUdn,
         RegistryEntry parentEntry, NodeServices services, CancellationToken deviceToken)
     {
         _service = service;
         _deviceLocation = deviceLocation;
-        _deviceUuid = deviceUuid;
+        _deviceUdn = deviceUdn;
         _deviceToken = deviceToken;
         _parentEntry = parentEntry;
         _services = services;
@@ -135,7 +135,7 @@ public partial class ServiceNodeViewModel : ObservableObject, INodeViewModel
     private void EmitFailure(string category, Uri url, string message)
     {
         _services.Diag.Warning(category, "SCPD load failed",
-            new DiagnosticContext { DeviceUuid = _deviceUuid, Url = url.ToString(), ErrorText = message });
+            new DiagnosticContext { DeviceUuid = _deviceUdn, Url = url.ToString(), ErrorText = message });
         _services.Ui.Post(() => ReplaceWith([new InlineErrorViewModel(message)]));
     }
 
@@ -153,7 +153,7 @@ public partial class ServiceNodeViewModel : ObservableObject, INodeViewModel
     private void FetchServiceXml() =>
         BrowserLaunch.OpenInDefaultBrowser(
             new Uri(_deviceLocation, _service.ScpdUrl),
-            _services.Launcher, _services.Diag, _deviceUuid);
+            _services.Launcher, _services.Diag, _deviceUdn);
 
     // AC-4.3.8: open the subscription popup (Story 4.3). The ServiceNode already holds _service +
     // _parentEntry + _services (no context threading needed, unlike 3.2's enriched ActionNode), so the

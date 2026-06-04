@@ -20,30 +20,30 @@ public sealed class RegistryIdentityLookupTests
         return (registry, new RegistryIdentityLookup(registry));
     }
 
-    private static void Alive(DeviceRegistry r, Guid uuid) =>
-        r.OnAlive(uuid, Location, DateTime.UtcNow, "Linn/1.0", TimeSpan.FromSeconds(1800), "1", "1", default);
+    private static void Alive(DeviceRegistry r, string udn) =>
+        r.OnAlive(udn, Location, DateTime.UtcNow, "Linn/1.0", TimeSpan.FromSeconds(1800), "1", "1", default);
 
     [Fact]
     [Trait("ac", "AC-9.identity")]
     public void TryGetFriendlyName_LoadedEntry_ReturnsFriendlyName()
     {
         var (registry, lookup) = NewPair();
-        var uuid = Guid.NewGuid();
-        Alive(registry, uuid);
-        registry.TryGetEntry(uuid, out var entry);
+        var udn = $"uuid:{Guid.NewGuid()}";
+        Alive(registry, udn);
+        registry.TryGetEntry(udn, out var entry);
         entry.MarkInFlight();
-        entry.MarkLoaded(StubDeviceDescriptionParser.Description($"uuid:{uuid}", "Bedroom DS"));
+        entry.MarkLoaded(StubDeviceDescriptionParser.Description(udn, "Bedroom DS"));
 
-        lookup.TryGetFriendlyName(uuid).Should().Be("Bedroom DS");
+        lookup.TryGetFriendlyName(udn).Should().Be("Bedroom DS");
     }
 
     [Fact]
     [Trait("ac", "AC-9.identity")]
-    public void TryGetFriendlyName_UnknownUuid_ReturnsNull()
+    public void TryGetFriendlyName_UnknownUdn_ReturnsNull()
     {
         var (_, lookup) = NewPair();
 
-        lookup.TryGetFriendlyName(Guid.NewGuid()).Should().BeNull();
+        lookup.TryGetFriendlyName($"uuid:{Guid.NewGuid()}").Should().BeNull();
     }
 
     [Fact]
@@ -51,10 +51,10 @@ public sealed class RegistryIdentityLookupTests
     public void TryGetFriendlyName_PendingEntry_ReturnsNull()
     {
         var (registry, lookup) = NewPair();
-        var uuid = Guid.NewGuid();
-        Alive(registry, uuid); // Pending — no Description yet
+        var udn = $"uuid:{Guid.NewGuid()}";
+        Alive(registry, udn); // Pending — no Description yet
 
-        lookup.TryGetFriendlyName(uuid).Should().BeNull(
-            "a not-yet-Loaded device has no friendly name; ring sink falls back to uuid:<uuid>");
+        lookup.TryGetFriendlyName(udn).Should().BeNull(
+            "a not-yet-Loaded device has no friendly name; ring sink falls back to the UDN string");
     }
 }

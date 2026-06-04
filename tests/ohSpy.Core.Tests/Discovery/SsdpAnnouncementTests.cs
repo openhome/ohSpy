@@ -7,7 +7,7 @@ using Xunit;
 public sealed class SsdpAnnouncementTests
 {
     private static SsdpAnnouncement Make(string? nt) =>
-        new(NT: nt, NTS: null, ST: null, USN: null, Uuid: null,
+        new(NT: nt, NTS: null, ST: null, USN: null, Udn: null,
             Location: null, CacheControlMaxAge: null, Server: null,
             BootId: null, ConfigId: null);
 

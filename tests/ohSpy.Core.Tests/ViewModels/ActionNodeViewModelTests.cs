@@ -22,7 +22,7 @@ public sealed class ActionNodeViewModelTests
             "urn:upnp-org:serviceId:RenderingControl", "/RC/Scpd.xml", "/RC/ctrl", "/RC/evt");
 
     private static RegistryEntry Entry() =>
-        new(Guid.NewGuid(), DeviceLocation, DateTime.UtcNow, CancellationToken.None);
+        new($"uuid:{Guid.NewGuid()}", DeviceLocation, DateTime.UtcNow, CancellationToken.None);
 
     private static NodeServices Services(IInvocationPopupLauncher? popup = null) =>
         new(new StubUpnpHttpClient(), new StubScpdParser(), new InlineUiDispatcher(),

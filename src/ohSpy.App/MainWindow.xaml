@@ -207,10 +207,10 @@
                                         Grid.Column="1"
                                         Text="{x:Bind KindToken}"
                                         FontFamily="Consolas" />
-                                    <!-- Device UUID -->
+                                    <!-- Device UDN -->
                                     <TextBlock
                                         Grid.Column="2"
-                                        Text="{x:Bind UuidText}"
+                                        Text="{x:Bind UdnText}"
                                         FontFamily="Consolas"
                                         TextTrimming="CharacterEllipsis" />
                                 </Grid>

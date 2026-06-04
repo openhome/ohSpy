@@ -11,15 +11,15 @@ internal sealed class FakeDeviceRegistry : IDeviceRegistry
 {
     public event Action<RegistryEntry>? DeviceLoaded;
     public event Action<RegistryEntry>? DeviceUpdated;
-    public event Action<Guid>? DeviceRemoved;
+    public event Action<string>? DeviceRemoved;
 
-    public void RaiseDeviceRemoved(Guid uuid) => DeviceRemoved?.Invoke(uuid);
+    public void RaiseDeviceRemoved(string udn) => DeviceRemoved?.Invoke(udn);
 
     // Unused by PropertiesViewModel — keep the events referenced so the compiler stays quiet.
     public void RaiseDeviceLoaded(RegistryEntry entry) => DeviceLoaded?.Invoke(entry);
     public void RaiseDeviceUpdated(RegistryEntry entry) => DeviceUpdated?.Invoke(entry);
 
-    public bool TryGetEntry(Guid uuid, out RegistryEntry entry) { entry = null!; return false; }
+    public bool TryGetEntry(string udn, out RegistryEntry entry) { entry = null!; return false; }
     public IReadOnlyCollection<RegistryEntry> Loaded => Array.Empty<RegistryEntry>();
     public int Count => 0;
 

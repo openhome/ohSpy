@@ -27,7 +27,7 @@ public sealed class SubscriptionClientTests
         new("urn:schemas-upnp-org:service:Foo:1", "urn:upnp-org:serviceId:Foo", "scpd.xml", "ctrl", eventSub);
 
     private static RegistryEntry Entry(CancellationToken deviceLevelToken = default) =>
-        new(Guid.NewGuid(), Location, DateTime.UtcNow, deviceLevelToken);
+        new($"uuid:{Guid.NewGuid()}", Location, DateTime.UtcNow, deviceLevelToken);
 
     private static byte[] Propertyset(params (string Name, string Value)[] props)
     {

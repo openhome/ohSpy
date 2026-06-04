@@ -104,18 +104,18 @@ internal sealed class DiscoveryService(
 
         if (ann.NTS?.Equals("ssdp:byebye", StringComparison.OrdinalIgnoreCase) == true)
         {
-            if (ann.Uuid.HasValue &&
+            if (!string.IsNullOrEmpty(ann.Udn) &&
                 effectiveNt?.Equals("upnp:rootdevice", StringComparison.OrdinalIgnoreCase) == true)
             {
-                registry.OnByebye(ann.Uuid.Value); // FR-008
+                registry.OnByebye(ann.Udn); // FR-008
             }
         }
         else // ssdp:alive or M-SEARCH response (NTS absent)
         {
-            if (ann.Uuid.HasValue && ann.Location is not null &&
+            if (!string.IsNullOrEmpty(ann.Udn) && ann.Location is not null &&
                 effectiveNt?.Equals("upnp:rootdevice", StringComparison.OrdinalIgnoreCase) == true)
             {
-                registry.OnAlive(ann.Uuid.Value, ann.Location, arrivalUtc,
+                registry.OnAlive(ann.Udn, ann.Location, arrivalUtc,
                     ann.Server, ann.CacheControlMaxAge, ann.BootId, ann.ConfigId,
                     adapterToken); // FR-005 / FR-007 / FR-043
             }

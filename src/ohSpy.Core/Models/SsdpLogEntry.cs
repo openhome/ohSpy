@@ -11,13 +11,13 @@ using System.Globalization;
 public sealed record SsdpLogEntry(
     DateTime TimestampUtc,
     SsdpLogKind Kind,
-    Guid Uuid)
+    string Udn)
 {
     /// <summary>Uppercase literal token for the row (AC-2.7.4): "ALIVE" / "BYEBYE".</summary>
     public string KindToken => Kind == SsdpLogKind.Alive ? "ALIVE" : "BYEBYE";
 
-    /// <summary>The UUID as a string for the row (bind a string, not a Guid, to TextBlock.Text).</summary>
-    public string UuidText => Uuid.ToString();
+    /// <summary>The UDN string for the row (already carries the <c>uuid:</c> prefix; Amendment A30).</summary>
+    public string UdnText => Udn;
 
     /// <summary>Local-time HH:mm:ss.fff for the operator (the wire stamp is UTC).</summary>
     public string TimestampDisplay =>

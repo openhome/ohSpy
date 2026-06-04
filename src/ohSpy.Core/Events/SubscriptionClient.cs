@@ -158,7 +158,7 @@ internal sealed class SubscriptionClient : ISubscriptionClient
             _diag.Warning(DiagCategories.GenaSubscribeFailed, "SUBSCRIBE failed — malformed eventSubURL",
                 new DiagnosticContext
                 {
-                    DeviceUuid = parentEntry.Uuid,
+                    DeviceUuid = parentEntry.Udn,
                     Url = $"{parentEntry.LocationUrl} + {service.EventSubUrl}",
                     ErrorText = "could not resolve an absolute eventSubURL",
                 });
@@ -167,7 +167,7 @@ internal sealed class SubscriptionClient : ISubscriptionClient
 
         // Register the pending buffer BEFORE awaiting SubscribeAsync so a NOTIFY landing in the gap is
         // captured and replayed at SID registration (AC-4.2.7).
-        var sub = new Subscription(this, eventSubUrl, parentEntry.Uuid, parentEntry.DeviceToken, popupToken);
+        var sub = new Subscription(this, eventSubUrl, parentEntry.Udn, parentEntry.DeviceToken, popupToken);
         _pending[sub.PendingId] = sub;
 
         SubscribeResponse response;
@@ -186,7 +186,7 @@ internal sealed class SubscriptionClient : ISubscriptionClient
             _diag.Warning(DiagCategories.GenaSubscribeFailed, "SUBSCRIBE failed",
                 new DiagnosticContext
                 {
-                    DeviceUuid = parentEntry.Uuid,
+                    DeviceUuid = parentEntry.Udn,
                     Url = eventSubUrl.ToString(),
                     ErrorText = ex.Message,
                 });
@@ -204,7 +204,7 @@ internal sealed class SubscriptionClient : ISubscriptionClient
         sub.StartNotifyWorker();
 
         _diag.Verbose(DiagCategories.GenaSubscribe, "GENA SUBSCRIBE granted",
-            new DiagnosticContext { DeviceUuid = parentEntry.Uuid, Url = eventSubUrl.ToString(), Sid = response.Sid });
+            new DiagnosticContext { DeviceUuid = parentEntry.Udn, Url = eventSubUrl.ToString(), Sid = response.Sid });
 
         return sub.Handle;
     }
@@ -238,7 +238,7 @@ internal sealed class SubscriptionClient : ISubscriptionClient
     {
         private readonly SubscriptionClient _owner;
         private readonly Uri _eventSubUrl;
-        private readonly Guid _deviceUuid;
+        private readonly string _deviceUdn;
         private readonly CancellationToken _deviceToken;
         private readonly CancellationToken _popupToken;
 
@@ -264,12 +264,12 @@ internal sealed class SubscriptionClient : ISubscriptionClient
         private int _stopped;  // renew loop should stop (lapse or close)
 
         public Subscription(
-            SubscriptionClient owner, Uri eventSubUrl, Guid deviceUuid,
+            SubscriptionClient owner, Uri eventSubUrl, string deviceUdn,
             CancellationToken deviceToken, CancellationToken popupToken)
         {
             _owner = owner;
             _eventSubUrl = eventSubUrl;
-            _deviceUuid = deviceUuid;
+            _deviceUdn = deviceUdn;
             _deviceToken = deviceToken;
             _popupToken = popupToken;
             PendingId = Guid.NewGuid();
@@ -339,7 +339,7 @@ internal sealed class SubscriptionClient : ISubscriptionClient
             {
                 // Malformed propertyset → swallow that one NOTIFY (Open Q5). Do NOT lapse, do NOT crash.
                 _owner._diag.Verbose(DiagCategories.GenaNotifyReceived, "dropped malformed propertyset",
-                    new DiagnosticContext { DeviceUuid = _deviceUuid, Url = _eventSubUrl.ToString(), Sid = Sid });
+                    new DiagnosticContext { DeviceUuid = _deviceUdn, Url = _eventSubUrl.ToString(), Sid = Sid });
                 return;
             }
 
@@ -508,7 +508,7 @@ internal sealed class SubscriptionClient : ISubscriptionClient
 
         private void EmitRenewFailed(string error) =>
             _owner._diag.Warning(DiagCategories.GenaRenewFailed, "GENA RENEW failed — subscription lapsed",
-                new DiagnosticContext { DeviceUuid = _deviceUuid, Url = _eventSubUrl.ToString(), Sid = Sid, ErrorText = error });
+                new DiagnosticContext { DeviceUuid = _deviceUdn, Url = _eventSubUrl.ToString(), Sid = Sid, ErrorText = error });
 
         public async Task CloseAsync()
         {
@@ -558,14 +558,14 @@ internal sealed class SubscriptionClient : ISubscriptionClient
                 {
                     await _owner._http.UnsubscribeAsync(_eventSubUrl, Sid, linked.Token).ConfigureAwait(false);
                     _owner._diag.Verbose(DiagCategories.GenaUnsubscribe, "GENA UNSUBSCRIBE sent",
-                        new DiagnosticContext { DeviceUuid = _deviceUuid, Url = _eventSubUrl.ToString(), Sid = Sid });
+                        new DiagnosticContext { DeviceUuid = _deviceUdn, Url = _eventSubUrl.ToString(), Sid = Sid });
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     // Swallow — popup close MUST NOT block on a hung device (FR-034 is "send", not
                     // "guarantee delivery"). AC-4.2.13.
                     _owner._diag.Warning(DiagCategories.GenaUnsubscribeFailed, "GENA UNSUBSCRIBE failed (swallowed)",
-                        new DiagnosticContext { DeviceUuid = _deviceUuid, Url = _eventSubUrl.ToString(), Sid = Sid, ErrorText = ex.Message });
+                        new DiagnosticContext { DeviceUuid = _deviceUdn, Url = _eventSubUrl.ToString(), Sid = Sid, ErrorText = ex.Message });
                 }
             }
             // Lapsed close → NO UNSUBSCRIBE (AC-4.2.14): fall through to resource cleanup.

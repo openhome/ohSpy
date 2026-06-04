@@ -9,7 +9,8 @@ using Xunit;
 
 public sealed class SsdpParserTests
 {
-    private static readonly Guid TestUuid = Guid.Parse("f7dc20e5-1234-5678-abcd-ef0123456789");
+    private const string TestGuidBody = "f7dc20e5-1234-5678-abcd-ef0123456789";
+    private const string TestUdn = "uuid:" + TestGuidBody;
 
     private static SsdpParser MakeParser(out CapturingDiagnosticEmitter cap)
     {
@@ -31,7 +32,7 @@ public sealed class SsdpParserTests
             $"HOST: 239.255.255.250:1900\r\n" +
             $"NT: upnp:rootdevice\r\n" +
             $"NTS: ssdp:alive\r\n" +
-            $"USN: uuid:{TestUuid}::upnp:rootdevice\r\n" +
+            $"USN: uuid:{TestGuidBody}::upnp:rootdevice\r\n" +
             $"LOCATION: http://192.0.2.1:49152/desc.xml\r\n" +
             $"CACHE-CONTROL: max-age=1800\r\n" +
             $"SERVER: Linux/1.0 UPnP/1.1 TestDevice/1.0\r\n" +
@@ -44,7 +45,7 @@ public sealed class SsdpParserTests
         ann.Should().NotBeNull();
         ann!.NT.Should().Be("upnp:rootdevice");
         ann.NTS.Should().Be("ssdp:alive");
-        ann.Uuid.Should().Be(TestUuid);
+        ann.Udn.Should().Be(TestUdn);
         ann.Location.Should().Be(new Uri("http://192.0.2.1:49152/desc.xml"));
         ann.CacheControlMaxAge.Should().Be(TimeSpan.FromSeconds(1800));
         ann.Server.Should().Be("Linux/1.0 UPnP/1.1 TestDevice/1.0");
@@ -63,7 +64,7 @@ public sealed class SsdpParserTests
             $"NOTIFY * HTTP/1.1\r\n" +
             $"NT: urn:schemas-upnp-org:device:MediaRenderer:1\r\n" +
             $"NTS: ssdp:alive\r\n" +
-            $"USN: uuid:{TestUuid}::urn:schemas-upnp-org:device:MediaRenderer:1\r\n" +
+            $"USN: uuid:{TestGuidBody}::urn:schemas-upnp-org:device:MediaRenderer:1\r\n" +
             $"\r\n");
 
         var ann = parser.Parse(payload, "192.0.2.1:1900");
@@ -82,7 +83,7 @@ public sealed class SsdpParserTests
             $"NOTIFY * HTTP/1.1\r\n" +
             $"NT: upnp:rootdevice\r\n" +
             $"NTS: ssdp:byebye\r\n" +
-            $"USN: uuid:{TestUuid}::upnp:rootdevice\r\n" +
+            $"USN: uuid:{TestGuidBody}::upnp:rootdevice\r\n" +
             $"\r\n");
 
         var ann = parser.Parse(payload, "192.0.2.1:1900");
@@ -90,7 +91,7 @@ public sealed class SsdpParserTests
         ann.Should().NotBeNull();
         ann!.NTS.Should().Be("ssdp:byebye");
         ann.NT.Should().Be("upnp:rootdevice");
-        ann.Uuid.Should().Be(TestUuid);
+        ann.Udn.Should().Be(TestUdn);
         cap.Entries.Should().BeEmpty();
     }
 
@@ -102,7 +103,7 @@ public sealed class SsdpParserTests
         var payload = Bytes(
             $"HTTP/1.1 200 OK\r\n" +
             $"ST: upnp:rootdevice\r\n" +
-            $"USN: uuid:{TestUuid}::upnp:rootdevice\r\n" +
+            $"USN: uuid:{TestGuidBody}::upnp:rootdevice\r\n" +
             $"LOCATION: http://192.0.2.1:49152/desc.xml\r\n" +
             $"CACHE-CONTROL: max-age=1800\r\n" +
             $"\r\n");
@@ -113,7 +114,7 @@ public sealed class SsdpParserTests
         ann!.ST.Should().Be("upnp:rootdevice");
         ann.NT.Should().BeNull();
         ann.NTS.Should().BeNull();
-        ann.Uuid.Should().Be(TestUuid);
+        ann.Udn.Should().Be(TestUdn);
         cap.Entries.Should().BeEmpty();
     }
 
@@ -169,24 +170,27 @@ public sealed class SsdpParserTests
             e.Severity == "Warning" && e.Category == DiagCategories.SsdpParse);
     }
 
-    // ── ExtractUuid tests ────────────────────────────────────────────────────
+    // ── ExtractUdn tests (Amendment A30 — the UDN is an OPAQUE string; NO Guid parse) ──────────
 
     [Theory]
     [Trait("ac", "AC-2.4.1")]
-    [InlineData("uuid:f7dc20e5-1234-5678-abcd-ef0123456789", "f7dc20e5-1234-5678-abcd-ef0123456789")]
-    [InlineData("uuid:f7dc20e5-1234-5678-abcd-ef0123456789::upnp:rootdevice", "f7dc20e5-1234-5678-abcd-ef0123456789")]
-    [InlineData("UUID:F7DC20E5-1234-5678-ABCD-EF0123456789", "f7dc20e5-1234-5678-abcd-ef0123456789")]
-    [InlineData("f7dc20e5-1234-5678-abcd-ef0123456789", "f7dc20e5-1234-5678-abcd-ef0123456789")]
+    // Full uuid:<body> kept (prefix retained), suffix stripped, body casing preserved:
+    [InlineData("uuid:f7dc20e5-1234-5678-abcd-ef0123456789", "uuid:f7dc20e5-1234-5678-abcd-ef0123456789")]
+    [InlineData("uuid:f7dc20e5-1234-5678-abcd-ef0123456789::upnp:rootdevice", "uuid:f7dc20e5-1234-5678-abcd-ef0123456789")]
+    [InlineData("UUID:F7DC20E5-1234-5678-ABCD-EF0123456789", "UUID:F7DC20E5-1234-5678-ABCD-EF0123456789")]
+    // (a) THE REGRESSION: a non-RFC-4122 UDN is returned VERBATIM (no parse, no null):
+    [InlineData("uuid:linn-ds-akurate-0001::upnp:rootdevice", "uuid:linn-ds-akurate-0001")]
+    [InlineData("uuid:4c494e4e-NOT-hex", "uuid:4c494e4e-NOT-hex")]
+    [InlineData("uuid:linn-ds-akurate-0001", "uuid:linn-ds-akurate-0001")]
+    // No uuid: token → null (the ONLY null cases):
+    [InlineData("f7dc20e5-1234-5678-abcd-ef0123456789", null)]
     [InlineData("not-a-uuid", null)]
     [InlineData(null, null)]
-    public void ExtractUuid_HandlesAllForms_AC241(string? usn, string? expectedGuid)
+    public void ExtractUdn_HandlesAllForms_AC241(string? usn, string? expectedUdn)
     {
-        var result = SsdpParser.ExtractUuid(usn);
+        var result = SsdpParser.ExtractUdn(usn);
 
-        if (expectedGuid is null)
-            result.Should().BeNull();
-        else
-            result.Should().Be(Guid.Parse(expectedGuid));
+        result.Should().Be(expectedUdn);
     }
 
     // ── cache-control tests ──────────────────────────────────────────────────

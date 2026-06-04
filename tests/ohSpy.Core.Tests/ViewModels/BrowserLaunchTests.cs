@@ -13,7 +13,7 @@ using ohSpy.Core.ViewModels;
 /// </summary>
 public sealed class BrowserLaunchTests
 {
-    private static readonly Guid Uuid = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private const string Udn = "uuid:22222222-2222-2222-2222-222222222222";
 
     [Fact]
     [Trait("ac", "AC-2.8.2")]
@@ -23,7 +23,7 @@ public sealed class BrowserLaunchTests
         var diag = new CapturingDiagnosticEmitter();
         var url = new Uri("http://192.168.1.100:49152/desc.xml");
 
-        var result = BrowserLaunch.OpenInDefaultBrowser(url, launcher, diag, Uuid);
+        var result = BrowserLaunch.OpenInDefaultBrowser(url, launcher, diag, Udn);
 
         result.Should().BeTrue();
         launcher.Launched.Should().ContainSingle().Which.Should().Be(url);
@@ -38,7 +38,7 @@ public sealed class BrowserLaunchTests
         var diag = new CapturingDiagnosticEmitter();
         var url = new Uri("https://device.local/desc.xml");
 
-        var result = BrowserLaunch.OpenInDefaultBrowser(url, launcher, diag, Uuid);
+        var result = BrowserLaunch.OpenInDefaultBrowser(url, launcher, diag, Udn);
 
         result.Should().BeTrue();
         launcher.Launched.Should().ContainSingle().Which.Should().Be(url);
@@ -56,7 +56,7 @@ public sealed class BrowserLaunchTests
         var diag = new CapturingDiagnosticEmitter();
         var url = new Uri(raw);
 
-        var result = BrowserLaunch.OpenInDefaultBrowser(url, launcher, diag, Uuid);
+        var result = BrowserLaunch.OpenInDefaultBrowser(url, launcher, diag, Udn);
 
         result.Should().BeFalse();
         launcher.Launched.Should().BeEmpty("a non-http(s) scheme must never be shell-opened");
@@ -74,7 +74,7 @@ public sealed class BrowserLaunchTests
         var diag = new CapturingDiagnosticEmitter();
         var url = new Uri("http://host/desc.xml");
 
-        var act = () => BrowserLaunch.OpenInDefaultBrowser(url, launcher, diag, Uuid);
+        var act = () => BrowserLaunch.OpenInDefaultBrowser(url, launcher, diag, Udn);
 
         act.Should().NotThrow("a launch failure must warn-not-crash (FR-019)");
         var warning = diag.Entries.Should().ContainSingle().Which;
@@ -91,9 +91,9 @@ public sealed class BrowserLaunchTests
         var launcher = new FakeUriLauncher();
         var diag = new CapturingDiagnosticEmitter();
 
-        BrowserLaunch.OpenInDefaultBrowser(new Uri("ftp://host/x"), launcher, diag, Uuid);
+        BrowserLaunch.OpenInDefaultBrowser(new Uri("ftp://host/x"), launcher, diag, Udn);
 
         diag.Entries.Should().ContainSingle()
-            .Which.Context.DeviceUuid.Should().Be(Uuid);
+            .Which.Context.DeviceUuid.Should().Be(Udn);
     }
 }

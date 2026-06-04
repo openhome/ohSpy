@@ -6,7 +6,7 @@ namespace ohSpy.Core.Diagnostics;
 /// </summary>
 public readonly record struct DiagnosticContext
 {
-    public Guid? DeviceUuid { get; init; }       // FR-041 Identity column
+    public string? DeviceUuid { get; init; }     // FR-041 Identity column (the UDN string; Amendment A30)
     public string? Url { get; init; }            // FR-041 Endpoint column
     public string? RemoteEndpoint { get; init; } // FR-041 Endpoint fallback
     public string? ServiceId { get; init; }

@@ -19,14 +19,14 @@ using ohSpy.Core.ViewModels;
 public sealed class SubscriptionPopupViewModelTests
 {
     private static readonly Uri DeviceLocation = new("http://192.168.1.100:49152/desc.xml");
-    private static readonly Guid DeviceUuid = Guid.Parse("33333333-3333-3333-3333-333333333333");
+    private const string DeviceUdn = "uuid:33333333-3333-3333-3333-333333333333";
 
     private static ServiceDescription Service(
         string serviceType = "urn:schemas-upnp-org:service:AVTransport:1") =>
         new(serviceType, "urn:upnp-org:serviceId:AVTransport", "/AVT/Scpd.xml", "/AVT/ctrl", "/AVT/evt");
 
-    private static RegistryEntry Entry(Guid? uuid = null, CancellationToken token = default) =>
-        new(uuid ?? DeviceUuid, DeviceLocation, DateTime.UtcNow, token);
+    private static RegistryEntry Entry(string? udn = null, CancellationToken token = default) =>
+        new(udn ?? DeviceUdn, DeviceLocation, DateTime.UtcNow, token);
 
     private static EventNotification Notify(long seq, params (string Key, string Value)[] props) =>
         new("uuid:fake-sid-1", seq, DateTime.UtcNow,
@@ -254,7 +254,7 @@ public sealed class SubscriptionPopupViewModelTests
         var vm = MakeVm(out _, out var registry);
         await vm.InitializeAsync();
 
-        registry.RaiseDeviceRemoved(DeviceUuid);
+        registry.RaiseDeviceRemoved(DeviceUdn);
 
         vm.Status.Should().Be(SubscriptionStatus.DeviceGone);
     }
@@ -266,9 +266,23 @@ public sealed class SubscriptionPopupViewModelTests
         var vm = MakeVm(out _, out var registry);
         await vm.InitializeAsync();
 
-        registry.RaiseDeviceRemoved(Guid.NewGuid());
+        registry.RaiseDeviceRemoved($"uuid:{Guid.NewGuid()}");
 
         vm.Status.Should().Be(SubscriptionStatus.Subscribed);
+    }
+
+    // Amendment A30 regression (f): a DIFFERENT-CASED string UDN still flips the banner (OrdinalIgnoreCase).
+    [Fact]
+    [Trait("ac", "AC-2.4.1")]
+    public async Task DeviceRemoved_DifferentCasedUdn_FlipsToDeviceGone_OrdinalIgnoreCase()
+    {
+        var vm = MakeVm(out _, out var registry);
+        await vm.InitializeAsync();
+
+        registry.RaiseDeviceRemoved(DeviceUdn.ToUpperInvariant()); // same device, different case
+
+        vm.Status.Should().Be(SubscriptionStatus.DeviceGone,
+            "OrdinalIgnoreCase UDN match flips the FR-037 banner (Amendment A30)");
     }
 
     [Fact]
@@ -279,7 +293,7 @@ public sealed class SubscriptionPopupViewModelTests
         var vm = MakeVm(out var client, out var registry);
         await vm.InitializeAsync();
 
-        registry.RaiseDeviceRemoved(DeviceUuid);
+        registry.RaiseDeviceRemoved(DeviceUdn);
         client.LastHandle!.RaiseLapsed(SubscriptionLapseReason.DeviceGone);
 
         vm.Status.Should().Be(SubscriptionStatus.DeviceGone);

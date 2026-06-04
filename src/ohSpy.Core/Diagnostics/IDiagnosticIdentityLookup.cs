@@ -10,8 +10,8 @@ namespace ohSpy.Core.Diagnostics;
 public interface IDiagnosticIdentityLookup
 {
     /// <summary>
-    /// Return the friendly name registered for <paramref name="deviceUuid"/>, or null if the
-    /// device isn't in the registry OR has no friendly name yet.
+    /// Return the friendly name registered for <paramref name="udn"/> (the device UDN string;
+    /// Amendment A30), or null if the device isn't in the registry OR has no friendly name yet.
     /// </summary>
-    string? TryGetFriendlyName(Guid deviceUuid);
+    string? TryGetFriendlyName(string udn);
 }

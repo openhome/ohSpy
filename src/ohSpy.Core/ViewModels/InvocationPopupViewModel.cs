@@ -38,7 +38,7 @@ public sealed partial class InvocationPopupViewModel : ObservableObject, IDispos
     private readonly IDeviceRegistry _registry;
     private readonly IScpdParser _scpd;
 
-    private readonly Guid _uuid;                 // snapshot for the diagnostic Identity column + banner match
+    private readonly string _udn;                // snapshot for the diagnostic Identity column + banner match
     private readonly Uri? _controlUrl;           // resolved ONCE; null ⇒ malformed → short-circuit to TransportError
     private readonly CancellationTokenSource _popupCts; // D7 popup level, linked to the device token
     private int _disposed;                       // Interlocked-guarded (mirror PropertiesViewModel)
@@ -86,7 +86,7 @@ public sealed partial class InvocationPopupViewModel : ObservableObject, IDispos
         _registry = registry;
         _scpd = scpd;
 
-        _uuid = parentEntry.Uuid;
+        _udn = parentEntry.Udn;
 
         // Decision: Title = "{serviceTail} · {action.Name}" — reuse the ":service:" tail logic from
         // ServiceNodeViewModel.ComputeLabel for visual consistency with the tree (open question #2).
@@ -111,8 +111,8 @@ public sealed partial class InvocationPopupViewModel : ObservableObject, IDispos
         // cancels DeviceToken → cancels this → the in-flight InvokeActionAsync throws OCE (swallowed).
         _popupCts = CancellationTokenSource.CreateLinkedTokenSource(parentEntry.DeviceToken);
 
-        // FR-037 banner (the 2.9 pattern verbatim): DeviceRemoved fires on the UI thread; a UUID
-        // match flips IsDeviceGone. IDisposable unsubscribes — without it the singleton registry
+        // FR-037 banner (the 2.9 pattern verbatim): DeviceRemoved fires on the UI thread; a UDN
+        // match (OrdinalIgnoreCase) flips IsDeviceGone. IDisposable unsubscribes — without it the singleton registry
         // pins every popup VM ever opened (Story 2.9's hard lesson).
         _registry.DeviceRemoved += OnDeviceRemoved;
     }
@@ -187,7 +187,7 @@ public sealed partial class InvocationPopupViewModel : ObservableObject, IDispos
             _diag.Warning(DiagCategories.HttpTimeout, "SOAP invoke timed out",
                 new DiagnosticContext
                 {
-                    DeviceUuid = _uuid,
+                    DeviceUuid = _udn,
                     Url = _controlUrl.ToString(),
                     ActionName = _action.Name,
                     Elapsed = ex.Elapsed,
@@ -199,13 +199,13 @@ public sealed partial class InvocationPopupViewModel : ObservableObject, IDispos
         {
             // Reconciliation #4 — INTENTIONAL DUPLICATE of the 3.1 http-layer SoapFault emit.
             // The 3.1 emit (inside UpnpHttpClient) carries DeviceUuid = null (the http layer has no
-            // UUID). THIS popup-level emit carries parentEntry.Uuid — the operator-facing identity the
+            // UDN). THIS popup-level emit carries parentEntry.Udn — the operator-facing identity the
             // FR-041 Diagnostics viewer's Identity column needs. The two coexist by design; do NOT
-            // "fix" the duplication by deleting this one — it is the useful, UUID-bearing emit.
+            // "fix" the duplication by deleting this one — it is the useful, UDN-bearing emit.
             _diag.Warning(DiagCategories.SoapFault, "SOAP action returned a UPnP fault",
                 new DiagnosticContext
                 {
-                    DeviceUuid = _uuid,
+                    DeviceUuid = _udn,
                     Url = _controlUrl.ToString(),
                     ActionName = _action.Name,
                     StatusCode = 500,
@@ -218,7 +218,7 @@ public sealed partial class InvocationPopupViewModel : ObservableObject, IDispos
             _diag.Warning(DiagCategories.SoapInvoke, "SOAP invoke transport failure",
                 new DiagnosticContext
                 {
-                    DeviceUuid = _uuid,
+                    DeviceUuid = _udn,
                     Url = _controlUrl.ToString(),
                     ActionName = _action.Name,
                     StatusCode = ex.StatusCode,
@@ -232,7 +232,7 @@ public sealed partial class InvocationPopupViewModel : ObservableObject, IDispos
             _diag.Warning(DiagCategories.SoapInvoke, "SOAP invoke protocol failure",
                 new DiagnosticContext
                 {
-                    DeviceUuid = _uuid,
+                    DeviceUuid = _udn,
                     Url = _controlUrl.ToString(),
                     ActionName = _action.Name,
                     ErrorText = ex.Message,
@@ -378,15 +378,15 @@ public sealed partial class InvocationPopupViewModel : ObservableObject, IDispos
         _diag.Warning(DiagCategories.ScpdParse, "SCPD state-table input resolution failed",
             new DiagnosticContext
             {
-                DeviceUuid = _uuid,
+                DeviceUuid = _udn,
                 Url = scpdUrl.ToString(),
                 ServiceId = _parentService.ServiceId,
                 ErrorText = detail,
             });
 
-    private void OnDeviceRemoved(Guid uuid)
+    private void OnDeviceRemoved(string udn)
     {
-        if (uuid != _uuid || IsDeviceGone) return; // ignore other devices; idempotent
+        if (!string.Equals(udn, _udn, StringComparison.OrdinalIgnoreCase) || IsDeviceGone) return; // ignore other devices; idempotent
         DeviceGoneText = $"Device left the network at {DateTime.Now:HH:mm:ss}";
         IsDeviceGone = true; // already-shown data stays; the banner appears (XAML binds Visibility)
     }

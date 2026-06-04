@@ -54,8 +54,9 @@ public sealed partial class SsdpLogViewModel : ObservableObject, IDisposable
         // Stamp at receipt: AnnouncementReceived carries no arrival time, and there is no
         // clock abstraction in Core (DiagnosticEmitter uses DateTime.UtcNow directly). The
         // event fires on the UI thread shortly after arrival, so the skew is sub-ms.
-        // ann.Uuid is ALREADY parsed from the USN by SsdpParser — do not re-parse.
-        var entry = new SsdpLogEntry(DateTime.UtcNow, kind.Value, ann.Uuid ?? Guid.Empty);
+        // ann.Udn is ALREADY extracted from the USN by SsdpParser — do not re-parse. An absent UDN
+        // renders empty (Amendment A30 — the old all-zero Guid.Empty fallback is gone).
+        var entry = new SsdpLogEntry(DateTime.UtcNow, kind.Value, ann.Udn ?? "");
         _ui.Post(() => Entries.PrependNewest(entry));
     }
 

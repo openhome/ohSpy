@@ -32,16 +32,16 @@ public sealed class DeviceTreeViewModelTests : IDisposable
 
     public void Dispose() => _vm.Dispose();
 
-    private RegistryEntry AddLoadedDevice(Guid uuid, string friendlyName = "Test Device",
+    private RegistryEntry AddLoadedDevice(string udn, string friendlyName = "Test Device",
         string deviceType = "urn:schemas-upnp-org:device:Basic:1")
     {
         // Use OnAlive so the entry lands in _entries (required for OnByebye / Remove to find it).
-        _registry.OnAlive(uuid, Location, DateTime.UtcNow, "Test/1.0",
+        _registry.OnAlive(udn, Location, DateTime.UtcNow, "Test/1.0",
             TimeSpan.FromSeconds(1800), "1", "1", CancellationToken.None);
-        _registry.TryGetEntry(uuid, out var entry);
+        _registry.TryGetEntry(udn, out var entry);
         entry.MarkInFlight();
         entry.MarkLoaded(new DeviceDescription(
-            friendlyName, deviceType, $"uuid:{uuid}",
+            friendlyName, deviceType, udn,
             null, "Mfr", null, "Model",
             null, null, null, null, null,
             Array.Empty<ServiceDescription>()));
@@ -53,12 +53,12 @@ public sealed class DeviceTreeViewModelTests : IDisposable
     [Trait("ac", "AC-2.5.3")]
     public void DeviceLoaded_AddsDeviceNodeViewModelToDevices_AC253()
     {
-        var uuid = Guid.NewGuid();
+        var udn = $"uuid:{Guid.NewGuid()}";
 
-        AddLoadedDevice(uuid);
+        AddLoadedDevice(udn);
 
         _vm.Devices.Count.Should().Be(1);
-        _vm.Devices[0].Uuid.Should().Be(uuid);
+        _vm.Devices[0].Udn.Should().Be(udn);
     }
 
     [Fact]
@@ -67,13 +67,13 @@ public sealed class DeviceTreeViewModelTests : IDisposable
     {
         // Review patch P1: a second DeviceLoaded for a known UUID must not throw
         // (IdentityKeyedSortedCollection.Add throws on duplicate). It is folded into an update.
-        var uuid = Guid.NewGuid();
-        AddLoadedDevice(uuid, "First Name");
+        var udn = $"uuid:{Guid.NewGuid()}";
+        AddLoadedDevice(udn, "First Name");
 
-        var second = new RegistryEntry(uuid, Location, DateTime.UtcNow, CancellationToken.None);
+        var second = new RegistryEntry(udn, Location, DateTime.UtcNow, CancellationToken.None);
         second.MarkInFlight();
         second.MarkLoaded(new DeviceDescription(
-            "Second Name", "urn:schemas-upnp-org:device:Basic:1", $"uuid:{uuid}",
+            "Second Name", "urn:schemas-upnp-org:device:Basic:1", udn,
             null, "Mfr", null, "Model",
             null, null, null, null, null,
             Array.Empty<ServiceDescription>()));
@@ -94,7 +94,7 @@ public sealed class DeviceTreeViewModelTests : IDisposable
         var registry = new DeviceRegistry(new InlineUiDispatcher());
         var vm = new DeviceTreeViewModel(registry, recordingUi, _nodeServices);
 
-        var entry = new RegistryEntry(Guid.NewGuid(), Location, DateTime.UtcNow, CancellationToken.None);
+        var entry = new RegistryEntry($"uuid:{Guid.NewGuid()}", Location, DateTime.UtcNow, CancellationToken.None);
         entry.MarkInFlight();
         entry.MarkLoaded(new DeviceDescription(
             "Test", "urn:schemas-upnp-org:device:Basic:1", "uuid:test",
@@ -110,10 +110,10 @@ public sealed class DeviceTreeViewModelTests : IDisposable
     [Trait("ac", "AC-2.5.3")]
     public void DeviceRemoved_RemovesFromDevices_AC253()
     {
-        var uuid = Guid.NewGuid();
-        AddLoadedDevice(uuid);
+        var udn = $"uuid:{Guid.NewGuid()}";
+        AddLoadedDevice(udn);
 
-        _registry.OnByebye(uuid);
+        _registry.OnByebye(udn);
 
         _vm.Devices.Count.Should().Be(0);
     }
@@ -122,16 +122,16 @@ public sealed class DeviceTreeViewModelTests : IDisposable
     [Trait("ac", "AC-2.5.8")]
     public void DeviceUpdated_UpdatesExistingNodeAndResortsIfNeeded_AC258()
     {
-        var uuid1 = Guid.Parse("00000001-0000-0000-0000-000000000000");
-        var uuid2 = Guid.Parse("00000002-0000-0000-0000-000000000000");
-        AddLoadedDevice(uuid1, "Bravo");
-        AddLoadedDevice(uuid2, "Alpha");
+        var udn1 = "uuid:00000001-0000-0000-0000-000000000000";
+        var udn2 = "uuid:00000002-0000-0000-0000-000000000000";
+        AddLoadedDevice(udn1, "Bravo");
+        AddLoadedDevice(udn2, "Alpha");
 
         // Rename "Bravo" to "Aardvark" — should sort before "Alpha"
-        var updatedEntry = new RegistryEntry(uuid1, Location, DateTime.UtcNow, CancellationToken.None);
+        var updatedEntry = new RegistryEntry(udn1, Location, DateTime.UtcNow, CancellationToken.None);
         updatedEntry.MarkInFlight();
         updatedEntry.MarkLoaded(new DeviceDescription(
-            "Aardvark", "urn:schemas-upnp-org:device:Basic:1", $"uuid:{uuid1}",
+            "Aardvark", "urn:schemas-upnp-org:device:Basic:1", udn1,
             null, "Mfr", null, "Model",
             null, null, null, null, null,
             Array.Empty<ServiceDescription>()));
@@ -145,14 +145,14 @@ public sealed class DeviceTreeViewModelTests : IDisposable
     [Trait("ac", "AC-2.5.8")]
     public void DeviceUpdated_PreservesNodeIdentityOnRename_AC258()
     {
-        var uuid = Guid.NewGuid();
-        AddLoadedDevice(uuid, "Old Name");
+        var udn = $"uuid:{Guid.NewGuid()}";
+        AddLoadedDevice(udn, "Old Name");
         var originalNode = _vm.Devices[0];
 
-        var updatedEntry = new RegistryEntry(uuid, Location, DateTime.UtcNow, CancellationToken.None);
+        var updatedEntry = new RegistryEntry(udn, Location, DateTime.UtcNow, CancellationToken.None);
         updatedEntry.MarkInFlight();
         updatedEntry.MarkLoaded(new DeviceDescription(
-            "New Name", "urn:schemas-upnp-org:device:Basic:1", $"uuid:{uuid}",
+            "New Name", "urn:schemas-upnp-org:device:Basic:1", udn,
             null, "Mfr", null, "Model",
             null, null, null, null, null,
             Array.Empty<ServiceDescription>()));
@@ -167,8 +167,8 @@ public sealed class DeviceTreeViewModelTests : IDisposable
     [Trait("ac", "AC-2.5.3")]
     public void Devices_SortedCaseInsensitive_AC253()
     {
-        AddLoadedDevice(Guid.NewGuid(), "zebra");
-        AddLoadedDevice(Guid.NewGuid(), "Apple");
+        AddLoadedDevice($"uuid:{Guid.NewGuid()}", "zebra");
+        AddLoadedDevice($"uuid:{Guid.NewGuid()}", "Apple");
 
         _vm.Devices[0].FriendlyName.Should().Be("Apple");
         _vm.Devices[1].FriendlyName.Should().Be("zebra");
@@ -178,21 +178,21 @@ public sealed class DeviceTreeViewModelTests : IDisposable
     [Trait("ac", "AC-2.5.3")]
     public void Devices_UuidTiebreakForEqualFriendlyNames_AC253()
     {
-        var uuid1 = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000000");
-        var uuid2 = Guid.Parse("bbbbbbbb-0000-0000-0000-000000000000");
-        AddLoadedDevice(uuid2, "Linn DS");
-        AddLoadedDevice(uuid1, "Linn DS");
+        var udn1 = "uuid:aaaaaaaa-0000-0000-0000-000000000000";
+        var udn2 = "uuid:bbbbbbbb-0000-0000-0000-000000000000";
+        AddLoadedDevice(udn2, "Linn DS");
+        AddLoadedDevice(udn1, "Linn DS");
 
-        // uuid1 (aaaa...) sorts before uuid2 (bbbb...) lexicographically
-        _vm.Devices[0].Uuid.Should().Be(uuid1);
-        _vm.Devices[1].Uuid.Should().Be(uuid2);
+        // udn1 (aaaa...) sorts before udn2 (bbbb...) lexicographically (ordinal UDN tiebreak)
+        _vm.Devices[0].Udn.Should().Be(udn1);
+        _vm.Devices[1].Udn.Should().Be(udn2);
     }
 
     [Fact]
     [Trait("ac", "AC-2.5.3")]
     public void DeviceRemoved_UnknownUuid_DoesNotThrow_AC253()
     {
-        var act = () => _registry.OnByebye(Guid.NewGuid());
+        var act = () => _registry.OnByebye($"uuid:{Guid.NewGuid()}");
 
         act.Should().NotThrow("remove of unknown UUID must be a no-op");
     }

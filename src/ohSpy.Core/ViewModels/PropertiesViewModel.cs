@@ -12,14 +12,14 @@ using ohSpy.Core.Shell;
 /// <see cref="RegistryEntry"/> at construction so the popup survives the device leaving the
 /// network (FR-037 / NFR-R3) — it does NOT retain the entry for display. Subscribes to
 /// <see cref="IDeviceRegistry.DeviceRemoved"/> (UI-thread) to flip a device-gone banner on a
-/// UUID match. Hyperlinks route through the Story 2.8 <see cref="BrowserLaunch"/> whitelist +
+/// UDN match (OrdinalIgnoreCase). Hyperlinks route through the Story 2.8 <see cref="BrowserLaunch"/> whitelist +
 /// shell-execute path (NOT HyperlinkButton.NavigateUri). <see cref="IDisposable"/> unsubscribes
 /// on window close — without it the singleton registry pins every Properties VM ever opened.
 /// <para>This is the automated-test heart of Story 2.9; the windowing/XAML layer is App-only.</para>
 /// </summary>
 public sealed partial class PropertiesViewModel : ObservableObject, IDisposable
 {
-    private readonly Guid _uuid;
+    private readonly string _udn;
     private readonly Uri _locationUrl;
     private readonly IDeviceRegistry _registry;
     private readonly IUriLauncher _launcher;
@@ -82,7 +82,7 @@ public sealed partial class PropertiesViewModel : ObservableObject, IDisposable
         IUriLauncher launcher,      // Story 2.8 shell-open seam (hyperlinks)
         IDiagnosticEmitter diag)    // Story 2.8 whitelist Warning path
     {
-        _uuid = entry.Uuid;
+        _udn = entry.Udn;
         _locationUrl = entry.LocationUrl;
         _registry = registry;
         _launcher = launcher;
@@ -94,7 +94,8 @@ public sealed partial class PropertiesViewModel : ObservableObject, IDisposable
         FriendlyName = OrDash(desc?.FriendlyName);
         DeviceTypeUrn = OrDash(desc?.DeviceType);
         Udn = OrDash(desc?.Udn);
-        Uuid = entry.Uuid.ToString();
+        Uuid = entry.Udn; // display property retains the name "Uuid" (XAML binds it); source is the UDN string
+
         PresentationUrl = OrDash(desc?.PresentationUrl);
 
         // Manufacturer
@@ -140,12 +141,12 @@ public sealed partial class PropertiesViewModel : ObservableObject, IDisposable
     private void OpenUrl(Uri? url)
     {
         if (url is null) return;
-        BrowserLaunch.OpenInDefaultBrowser(url, _launcher, _diag, _uuid);
+        BrowserLaunch.OpenInDefaultBrowser(url, _launcher, _diag, _udn);
     }
 
-    private void OnDeviceRemoved(Guid uuid)
+    private void OnDeviceRemoved(string udn)
     {
-        if (uuid != _uuid || IsDeviceGone) return; // ignore other devices; idempotent
+        if (!string.Equals(udn, _udn, StringComparison.OrdinalIgnoreCase) || IsDeviceGone) return; // ignore other devices; idempotent
         DeviceGoneText = $"Device left the network at {DateTime.Now:HH:mm:ss}";
         IsDeviceGone = true; // data stays visible (snapshot); banner appears (XAML binds Visibility)
     }

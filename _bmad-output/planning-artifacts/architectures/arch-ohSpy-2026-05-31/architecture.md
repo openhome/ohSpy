@@ -23,7 +23,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 
 **Functional Requirements (≈ 60 across 13 feature areas):**
 
-- **4.1 Discovery & Device Registry** (FR-004..FR-008, FR-053, FR-054) — SSDP M-SEARCH + continuous NOTIFY listening on one IPv4 adapter; UUID-keyed registry; root-only with three-layer enforcement; case-insensitive sort with stable identity.
+- **4.1 Discovery & Device Registry** (FR-004..FR-008, FR-053, FR-054) — SSDP M-SEARCH + continuous NOTIFY listening on one IPv4 adapter; UDN-keyed registry (string identity, `OrdinalIgnoreCase` — see Amendment A30); root-only with three-layer enforcement; case-insensitive sort with stable identity.
 - **4.2 Eager description fetch** (FR-043, FR-047) — async fetch on registry entry; tree visibility gated on `Loaded`; bounded parallelism (target 8); mismatched-root backstop.
 - **4.3 Device tree** (FR-001, FR-002, FR-009..FR-013, FR-044, FR-045, FR-051) — two-pane layout; device → service → action; persistent expand chevron via "Loading…" placeholder; kind glyphs from a Windows-shipped font; muted secondary detail line (deviceType tail + host:port).
 - **4.4 Lazy SCPD enumeration** (FR-012, FR-100) — fetch on service expand; incremental parse so a 100-action SCPD never freezes the UI.
@@ -1081,6 +1081,8 @@ This list is *exhaustive across the architectural decisions made so far*. New st
 
 ### Decision 9 — `DescriptionFetchState` Machine
 
+> **UDN-keyed (string identity, `OrdinalIgnoreCase`) — see Amendment A30.** UPnP UDNs are opaque strings; the registry never parses them to `Guid`. The `RegistryEntry` identity is `string Udn` (`uuid:<body>`), NOT `Guid Uuid`.
+
 **Chosen:** Enum + method-gated transitions on `RegistryEntry`. Four states, ~5 legal transitions, `internal`-visibility `MarkXxx` methods called exclusively by `EagerDescriptionDispatcher` on the UI thread.
 
 **Type contract:**
@@ -1096,7 +1098,7 @@ public enum DescriptionFetchState
 
 public sealed class RegistryEntry
 {
-    public Guid Uuid { get; }
+    public string Udn { get; }                                        // A30: opaque "uuid:<body>" — NOT a parsed Guid
     public Uri LocationUrl { get; private set; }
     public DescriptionFetchState State { get; private set; } = DescriptionFetchState.Pending;
 
@@ -2926,6 +2928,8 @@ entry.DeviceCts.Dispose();  // release the linked-token callback on the adapter 
 
 ### Amendment A28 — Decision 9 FetchAsync sketch has two inaccuracies: `RootUdn:Guid` and "no locks" (Decision 9 refinement)
 
+> **PARTIALLY SUPERSEDED by Amendment A30 (Story 2.10).** Inaccuracy 1's `UdnMatches(string udn, Guid uuid)` signature no longer holds: device identity is now the UDN **string**, so the helper is `UdnMatches(string descUdn, string registeredUdn)` (strip `uuid:` from both, `OrdinalIgnoreCase` — NO `Guid.TryParse`). The threading note (Inaccuracy 2) still stands.
+
 **Source:** Story 2.3 implementation + Sonnet code-review (2026-06-02). Two independent inaccuracies in D9's `FetchAsync` pseudo-code and threading narrative.
 
 **Inaccuracy 1 — `description.RootUdn != entry.Uuid` (wrong field name, wrong type).**
@@ -2969,6 +2973,20 @@ var before = GC.GetAllocatedBytesForCurrentThread();
 **Testing-standards rule (append to Pattern 14/15 in the architecture):** Any test asserting zero or near-zero allocations per operation MUST use `GC.GetAllocatedBytesForCurrentThread()`. `GC.GetTotalAllocatedBytes` is process-wide and non-deterministic under xUnit parallelism regardless of test isolation annotations.
 
 **Applied to:** `tests/ohSpy.Core.Tests/Diagnostics/DiagnosticEmitterTests.cs` (Story 2.3). Future zero-allocation tests (e.g. SSDP channel path, Description parsing hot-path) must follow this pattern.
+
+---
+
+### Amendment A30 — Device identity is the UDN string, not a parsed `Guid` (Decision 9 correction)
+
+**Source:** Sprint Change Proposal 2026-06-04 (correct-course); surfaced by the Story 5.2 manual smoke on a live Linn network. Fixed in Story 2.10.
+
+UPnP UDNs are opaque strings (`uuid:` + an identifier; UDA recommends but does not *require* RFC 4122). Devices in the wild — including Linn — use non-RFC-4122 UDNs. The original Decision 9 keyed the registry on a `Guid` parsed via `Guid.TryParse`, which silently drops every non-RFC-4122 device: `SsdpParser.ExtractUuid` parses → null → `DiscoveryService`'s `Uuid.HasValue` gate skips the announcement → no registry entry → no tree row; the SSDP log renders the all-zero `Guid.Empty`; `EagerDescriptionDispatcher.UdnMatches` re-parses the same way.
+
+**Correction:** identity is the full normalised UDN **string** (`uuid:<body>`, the `::<nt>` suffix stripped, the `uuid:` prefix retained), compared `OrdinalIgnoreCase`. The registry is **UDN-keyed** (`ConcurrentDictionary<string, RegistryEntry>(StringComparer.OrdinalIgnoreCase)`). `DiagnosticContext.DeviceUuid` (now `string?`), `RegistryEntry.Udn`, `IDeviceRegistry.DeviceRemoved` (`Action<string>`), `IDiagnosticIdentityLookup.TryGetFriendlyName(string)`, the device-tree node identity, and the popup FR-037 banners all carry the string. The FR-041 Identity-column fallback is the UDN string itself (already prefixed `uuid:`). `Guid.TryParse` on a UDN is forbidden. `SubscriptionClient._pending`/`PendingId` stay `Guid` — they key a per-subscribe correlation id, not device identity. The `OrdinalIgnoreCase` comparer preserves the prior `Guid`-equality semantics for RFC-4122 (hex) UDNs, so existing devices are unaffected.
+
+**Supersedes** Amendment A28's `UdnMatches(string udn, Guid uuid)` signature: the helper is now `UdnMatches(string descUdn, string registeredUdn)` (strip `uuid:` from both, `OrdinalIgnoreCase`) — no Guid parse.
+
+**Applied to:** `SsdpParser`, `SsdpAnnouncement`, `DiscoveryService`, `DeviceRegistry`/`IDeviceRegistry`/`RegistryEntry`, `EagerDescriptionDispatcher`, `DiagnosticContext`/`DiagnosticRingSink`/`IDiagnosticIdentityLookup`/`RegistryIdentityLookup`/`NullIdentityLookup`, `DeviceNodeViewModel`/`DeviceTreeViewModel`/`ServiceNodeViewModel`/`BrowserLaunch`, `PropertiesViewModel`/`InvocationPopupViewModel`/`SubscriptionPopupViewModel`, `SsdpLogEntry`/`SsdpLogViewModel`, `SubscriptionClient` (identity emits only). Decision 9 + §4.1 component bullet reworded "UUID-keyed" → "UDN-keyed (string identity, OrdinalIgnoreCase)".
 
 ---
 

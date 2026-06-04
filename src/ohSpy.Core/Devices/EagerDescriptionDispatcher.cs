@@ -73,17 +73,17 @@ internal sealed class EagerDescriptionDispatcher : IDisposable
                 .ConfigureAwait(false);
             var description = _descParser.Parse(bytes);
 
-            if (!UdnMatches(description.Udn, entry.Uuid))
+            if (!UdnMatches(description.Udn, entry.Udn))
             {
                 // FR-043 mismatched-root backstop (AC-9.6): remove the entry, no MarkLoaded.
                 _diag.Information(DiagCategories.DescriptionFetchMismatch, "root udn mismatch",
                     new DiagnosticContext
                     {
-                        DeviceUuid = entry.Uuid,
+                        DeviceUuid = entry.Udn,
                         Url = entry.LocationUrl.ToString(),
                         ErrorText = $"declared root: {description.Udn}",
                     });
-                _dispatcher.Post(() => _registry.Remove(entry.Uuid));
+                _dispatcher.Post(() => _registry.Remove(entry.Udn));
                 return;
             }
 
@@ -103,7 +103,7 @@ internal sealed class EagerDescriptionDispatcher : IDisposable
             _diag.Warning(DiagCategories.DescriptionFetch, "description fetch failed",
                 new DiagnosticContext
                 {
-                    DeviceUuid = entry.Uuid,
+                    DeviceUuid = entry.Udn,
                     Url = entry.LocationUrl.ToString(),
                     ErrorText = ex.Message,
                 });
@@ -116,15 +116,18 @@ internal sealed class EagerDescriptionDispatcher : IDisposable
     }
 
     /// <summary>
-    /// Compares a device-description UDN (a <c>uuid:&lt;guid&gt;</c> string) against the SSDP
-    /// UUID. Strips the case-insensitive <c>uuid:</c> prefix and parses; any non-match or
-    /// parse failure returns false (treated as a mismatch). A naive string compare against
-    /// <c>uuid.ToString()</c> would false-mismatch every real device (prefix + hex casing).
+    /// Compares the device-description <c>&lt;UDN&gt;</c> against the SSDP-registered UDN
+    /// (Amendment A30 — both are opaque <c>uuid:&lt;body&gt;</c> strings; NO <see cref="Guid"/>
+    /// parse). Strips a leading case-insensitive <c>uuid:</c> from BOTH sides defensively, then
+    /// compares <c>OrdinalIgnoreCase</c> — which preserves the prior <see cref="Guid"/>-equality
+    /// semantics for RFC-4122 (hex) UDNs while admitting non-RFC-4122 UDNs verbatim.
+    /// Supersedes Amendment A28's <c>UdnMatches(string, Guid)</c> signature.
     /// </summary>
-    internal static bool UdnMatches(string udn, Guid uuid)
+    internal static bool UdnMatches(string descUdn, string registeredUdn)
     {
-        var s = udn.StartsWith("uuid:", StringComparison.OrdinalIgnoreCase) ? udn[5..] : udn;
-        return Guid.TryParse(s, out var parsed) && parsed == uuid;
+        var a = descUdn.StartsWith("uuid:", StringComparison.OrdinalIgnoreCase) ? descUdn[5..] : descUdn;
+        var b = registeredUdn.StartsWith("uuid:", StringComparison.OrdinalIgnoreCase) ? registeredUdn[5..] : registeredUdn;
+        return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Disposes the concurrency semaphore. Invoked by the DI container at app shutdown.</summary>

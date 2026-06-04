@@ -18,7 +18,7 @@ public sealed class PropertiesViewModelTests
     private static readonly Uri Location = new("http://192.168.1.100:49152/desc.xml");
 
     private static RegistryEntry BuildEntry(
-        Guid? uuid = null,
+        string? registryUdn = null,
         Uri? location = null,
         DeviceDescription? description = null,
         string? server = "Linux/3.0 UPnP/1.0 ohSpy/1.0",
@@ -28,7 +28,7 @@ public sealed class PropertiesViewModelTests
         int aliveCount = 1)
     {
         var entry = new RegistryEntry(
-            uuid ?? Guid.NewGuid(), location ?? Location, DateTime.UtcNow, CancellationToken.None);
+            registryUdn ?? $"uuid:{Guid.NewGuid()}", location ?? Location, DateTime.UtcNow, CancellationToken.None);
         for (var i = 0; i < aliveCount; i++)
             entry.RefreshSsdpMetadata(DateTime.UtcNow, server, maxAge ?? TimeSpan.FromSeconds(1800), bootId, configId);
         if (description is not null)
@@ -68,8 +68,8 @@ public sealed class PropertiesViewModelTests
     [Trait("ac", "AC-2.9.4")]
     public void Identity_MapsFromDescription_AC294()
     {
-        var uuid = Guid.NewGuid();
-        var entry = BuildEntry(uuid: uuid, description: Description(
+        var udn = $"uuid:{Guid.NewGuid()}";
+        var entry = BuildEntry(registryUdn: udn, description: Description(
             friendlyName: "Linn Klimax DSM",
             deviceType: "urn:schemas-upnp-org:device:MediaRenderer:1",
             udn: "uuid:abc",
@@ -80,7 +80,7 @@ public sealed class PropertiesViewModelTests
         vm.DeviceTypeUrn.Should().Be("urn:schemas-upnp-org:device:MediaRenderer:1");
         vm.Udn.Should().Be("uuid:abc");
         vm.PresentationUrl.Should().Be("http://192.168.1.100:49152/index.html");
-        vm.Uuid.Should().Be(uuid.ToString());
+        vm.Uuid.Should().Be(udn);
     }
 
     // ── Manufacturer (AC-2.9.4) ──
@@ -207,12 +207,12 @@ public sealed class PropertiesViewModelTests
     [Trait("ac", "AC-2.9.6")]
     public void DeviceRemoved_MatchingUuid_SetsBanner_AC296()
     {
-        var uuid = Guid.NewGuid();
+        var udn = $"uuid:{Guid.NewGuid()}";
         var registry = new FakeDeviceRegistry();
-        var entry = BuildEntry(uuid: uuid, description: Description(friendlyName: "Snapshot Name"));
+        var entry = BuildEntry(registryUdn: udn, description: Description(friendlyName: "Snapshot Name"));
         var vm = NewVm(entry, registry: registry);
 
-        registry.RaiseDeviceRemoved(uuid);
+        registry.RaiseDeviceRemoved(udn);
 
         vm.IsDeviceGone.Should().BeTrue();
         vm.DeviceGoneText.Should().StartWith("Device left the network");
@@ -224,12 +224,27 @@ public sealed class PropertiesViewModelTests
     public void DeviceRemoved_OtherUuid_Ignored_AC296()
     {
         var registry = new FakeDeviceRegistry();
-        var entry = BuildEntry(uuid: Guid.NewGuid(), description: Description());
+        var entry = BuildEntry(registryUdn: $"uuid:{Guid.NewGuid()}", description: Description());
         var vm = NewVm(entry, registry: registry);
 
-        registry.RaiseDeviceRemoved(Guid.NewGuid()); // a DIFFERENT device
+        registry.RaiseDeviceRemoved($"uuid:{Guid.NewGuid()}"); // a DIFFERENT device
 
         vm.IsDeviceGone.Should().BeFalse();
+    }
+
+    // Amendment A30 regression (f): the FR-037 banner flips on a DIFFERENT-CASED string UDN
+    // (OrdinalIgnoreCase match) and a non-GUID UDN; a different UDN does not flip it.
+    [Fact]
+    [Trait("ac", "AC-2.4.1")]
+    public void DeviceRemoved_DifferentCasedNonGuidUdn_FlipsBanner_OrdinalIgnoreCase()
+    {
+        var registry = new FakeDeviceRegistry();
+        var entry = BuildEntry(registryUdn: "uuid:linn-ds-0001", description: Description());
+        var vm = NewVm(entry, registry: registry);
+
+        registry.RaiseDeviceRemoved("uuid:LINN-DS-0001"); // same device, different case
+
+        vm.IsDeviceGone.Should().BeTrue("OrdinalIgnoreCase UDN match flips the FR-037 banner");
     }
 
     // ── Hyperlink open (AC-2.9.5) ──
@@ -296,12 +311,12 @@ public sealed class PropertiesViewModelTests
     [Trait("ac", "AC-2.9.6")]
     public void Dispose_Unsubscribes_NoBannerAfterDispose_AC296()
     {
-        var uuid = Guid.NewGuid();
+        var udn = $"uuid:{Guid.NewGuid()}";
         var registry = new FakeDeviceRegistry();
-        var vm = NewVm(BuildEntry(uuid: uuid, description: Description()), registry: registry);
+        var vm = NewVm(BuildEntry(registryUdn: udn, description: Description()), registry: registry);
 
         vm.Dispose();
-        registry.RaiseDeviceRemoved(uuid);
+        registry.RaiseDeviceRemoved(udn);
 
         vm.IsDeviceGone.Should().BeFalse("Dispose detaches the DeviceRemoved handler");
     }

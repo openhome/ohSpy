@@ -42,7 +42,7 @@ public sealed partial class SubscriptionPopupViewModel : ObservableObject, IDisp
     private readonly IDiagnosticEmitter _diag;
     private readonly IDeviceRegistry _registry;
 
-    private readonly Guid _uuid;                 // snapshot for the FR-037 banner UUID match
+    private readonly string _udn;                // snapshot for the FR-037 banner UDN match (OrdinalIgnoreCase)
     private readonly CancellationTokenSource _popupCts; // D7 popup level, linked to the device token
     private SubscriptionHandle? _handle;         // null until SubscribeAsync succeeds (null ⇒ no UNSUBSCRIBE)
     private int _disposed;                        // Interlocked-guarded (mirror InvocationPopupViewModel)
@@ -85,7 +85,7 @@ public sealed partial class SubscriptionPopupViewModel : ObservableObject, IDisp
         _diag = diag;
         _registry = registry;
 
-        _uuid = parentEntry.Uuid;
+        _udn = parentEntry.Udn;
         Title = ComputeServiceTail(service);
 
         // AC-4.3.2 #1: Subscribing set synchronously in the ctor (the ctor runs on the UI thread).
@@ -96,8 +96,8 @@ public sealed partial class SubscriptionPopupViewModel : ObservableObject, IDisp
         // observes cancellation (OCE swallowed; or a lapse cascades through the handle).
         _popupCts = CancellationTokenSource.CreateLinkedTokenSource(parentEntry.DeviceToken);
 
-        // FR-037 banner (the 2.9 pattern): DeviceRemoved fires on the UI thread; a UUID match flips the
-        // banner. IDisposable unsubscribes — without it the singleton registry pins every popup VM ever
+        // FR-037 banner (the 2.9 pattern): DeviceRemoved fires on the UI thread; a UDN match (OrdinalIgnoreCase)
+        // flips the banner. IDisposable unsubscribes — without it the singleton registry pins every popup VM ever
         // opened (Story 2.9's hard lesson). NOTE the dual path to DeviceGone — DeviceRemoved (registry,
         // UI-thread) AND handle.Lapsed(DeviceGone) (4.2, off-thread); both converge on Status = DeviceGone
         // (the apply is idempotent).
@@ -234,12 +234,12 @@ public sealed partial class SubscriptionPopupViewModel : ObservableObject, IDisp
             }
         });
 
-    // FR-037 banner (the 2.9 pattern): DeviceRemoved fires on the UI thread. UUID match → idempotent
-    // Status = DeviceGone. The handle ALSO raises Lapsed(DeviceGone) (4.2, off-thread) → both converge
-    // here on DeviceGone; the apply is idempotent (a second DeviceGone is a harmless re-set).
-    private void OnDeviceRemoved(Guid uuid)
+    // FR-037 banner (the 2.9 pattern): DeviceRemoved fires on the UI thread. UDN match (OrdinalIgnoreCase)
+    // → idempotent Status = DeviceGone. The handle ALSO raises Lapsed(DeviceGone) (4.2, off-thread) → both
+    // converge here on DeviceGone; the apply is idempotent (a second DeviceGone is a harmless re-set).
+    private void OnDeviceRemoved(string udn)
     {
-        if (uuid != _uuid || Status == SubscriptionStatus.DeviceGone) return;
+        if (!string.Equals(udn, _udn, StringComparison.OrdinalIgnoreCase) || Status == SubscriptionStatus.DeviceGone) return;
         Status = SubscriptionStatus.DeviceGone;
         StatusMessage = "device no longer reachable";
     }

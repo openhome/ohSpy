@@ -9,8 +9,12 @@ using Xunit;
 
 public sealed class DiscoveryServiceTests
 {
-    private static readonly Guid RootUuid = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
-    private static readonly Guid AnotherUuid = Guid.Parse("bbbbbbbb-0000-0000-0000-000000000002");
+    // Amendment A30: identity is the UDN string. The "body" is the USN token after "uuid:";
+    // the registry UDN is "uuid:{body}".
+    private const string RootBody = "aaaaaaaa-0000-0000-0000-000000000001";
+    private const string AnotherBody = "bbbbbbbb-0000-0000-0000-000000000002";
+    private const string RootUdn = "uuid:" + RootBody;
+    private const string AnotherUdn = "uuid:" + AnotherBody;
 
     private static (DiscoveryService service, ChannelSsdpTransport transport,
         DeviceRegistry registry, CapturingDiagnosticEmitter cap)
@@ -41,7 +45,7 @@ public sealed class DiscoveryServiceTests
         registry.EntryNeedsFetch += _ => fetchFired++;
 
         await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
-        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootUuid));
+        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootBody));
         await DrainAsync(service, transport);
 
         registry.Count.Should().Be(1);
@@ -55,7 +59,7 @@ public sealed class DiscoveryServiceTests
         var (service, transport, registry, _) = MakeSystem();
 
         await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
-        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootUuid));
+        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootBody));
         transport.Complete();
         await service.DisposeAsync();
 
@@ -67,11 +71,11 @@ public sealed class DiscoveryServiceTests
         var service2 = new DiscoveryService(registry, parser2, ui2);
 
         await service2.StartAsync(transport2.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
-        await transport2.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootUuid));
+        await transport2.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootBody));
         await DrainAsync(service2, transport2);
 
         registry.Count.Should().Be(1);
-        registry.TryGetEntry(RootUuid, out var entry).Should().BeTrue();
+        registry.TryGetEntry(RootUdn, out var entry).Should().BeTrue();
         entry.AliveCount.Should().Be(2);
     }
 
@@ -80,16 +84,16 @@ public sealed class DiscoveryServiceTests
     public async Task StartAsync_Byebye_KnownUuid_RemovesEntry_AC247()
     {
         var (service, transport, registry, _) = MakeSystem();
-        Guid? removedUuid = null;
-        registry.DeviceRemoved += id => removedUuid = id;
+        string? removedUdn = null;
+        registry.DeviceRemoved += id => removedUdn = id;
 
         await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
-        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootUuid));
-        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:byebye", RootUuid));
+        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootBody));
+        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:byebye", RootBody));
         await DrainAsync(service, transport);
 
         registry.Count.Should().Be(0);
-        removedUuid.Should().Be(RootUuid);
+        removedUdn.Should().Be(RootUdn);
     }
 
     [Fact]
@@ -99,7 +103,7 @@ public sealed class DiscoveryServiceTests
         var (service, transport, registry, _) = MakeSystem();
 
         await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
-        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:byebye", AnotherUuid));
+        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:byebye", AnotherBody));
         await DrainAsync(service, transport);
 
         registry.Count.Should().Be(0);
@@ -115,7 +119,7 @@ public sealed class DiscoveryServiceTests
 
         await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
         await transport.WriteAsync(SsdpDatagramBuilder.Notify(
-            "urn:schemas-upnp-org:device:MediaRenderer:1", "ssdp:alive", RootUuid));
+            "urn:schemas-upnp-org:device:MediaRenderer:1", "ssdp:alive", RootBody));
         await DrainAsync(service, transport);
 
         registry.Count.Should().Be(0);
@@ -129,7 +133,7 @@ public sealed class DiscoveryServiceTests
         var (service, transport, registry, _) = MakeSystem();
 
         await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
-        await transport.WriteAsync(SsdpDatagramBuilder.SearchResponse(RootUuid));
+        await transport.WriteAsync(SsdpDatagramBuilder.SearchResponse(RootBody));
         await DrainAsync(service, transport);
 
         registry.Count.Should().Be(1);
@@ -161,7 +165,7 @@ public sealed class DiscoveryServiceTests
         using var cts = new CancellationTokenSource();
 
         await service.StartAsync(transport.IncomingDatagrams, cts.Token, CancellationToken.None);
-        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootUuid));
+        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootBody));
         await cts.CancelAsync();
 
         var disposeTask = service.DisposeAsync().AsTask();
@@ -179,16 +183,52 @@ public sealed class DiscoveryServiceTests
 
         await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
         // root alive
-        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootUuid));
+        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootBody));
         // embedded alive
         await transport.WriteAsync(SsdpDatagramBuilder.Notify(
-            "urn:schemas-upnp-org:device:MediaRenderer:1", "ssdp:alive", AnotherUuid));
+            "urn:schemas-upnp-org:device:MediaRenderer:1", "ssdp:alive", AnotherBody));
         // root byebye
-        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:byebye", RootUuid));
+        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:byebye", RootBody));
         // malformed — should NOT raise event
         await transport.WriteAsync(SsdpDatagramBuilder.Malformed());
         await DrainAsync(service, transport);
 
         announcements.Should().HaveCount(3, "malformed datagram must not raise AnnouncementReceived");
+    }
+
+    // ─── Amendment A30 regression (e): a non-GUID-UDN root alive routes into OnAlive ─────────────
+    // Pre-A30 the Uuid.HasValue gate dropped a non-RFC-4122 UDN; the gate is now !IsNullOrEmpty(Udn).
+
+    [Fact]
+    [Trait("ac", "AC-2.4.1")]
+    public async Task StartAsync_Alive_NonGuidUdn_RoutesIntoOnAlive()
+    {
+        var (service, transport, registry, _) = MakeSystem();
+        const string linnBody = "linn-ds-0001"; // non-RFC-4122 — would have been dropped pre-A30
+
+        await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
+        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", linnBody));
+        await DrainAsync(service, transport);
+
+        registry.Count.Should().Be(1, "the non-GUID alive reached OnAlive (the old HasValue gate is gone)");
+        registry.TryGetEntry("uuid:" + linnBody, out _).Should().BeTrue();
+    }
+
+    [Fact]
+    [Trait("ac", "AC-2.4.1")]
+    public async Task StartAsync_Byebye_NonGuidUdn_RoutesIntoOnByebye()
+    {
+        var (service, transport, registry, _) = MakeSystem();
+        const string linnBody = "linn-ds-0001";
+        string? removedUdn = null;
+        registry.DeviceRemoved += id => removedUdn = id;
+
+        await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
+        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", linnBody));
+        await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:byebye", linnBody));
+        await DrainAsync(service, transport);
+
+        registry.Count.Should().Be(0);
+        removedUdn.Should().Be("uuid:" + linnBody);
     }
 }

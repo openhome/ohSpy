@@ -33,7 +33,7 @@ public partial class DeviceNodeViewModel : ObservableObject, INodeViewModel
         RefreshFrom(entry);
     }
 
-    public Guid Uuid => _entry.Uuid;
+    public string Udn => _entry.Udn;
 
     string INodeViewModel.Label => FriendlyName;
 
@@ -43,7 +43,7 @@ public partial class DeviceNodeViewModel : ObservableObject, INodeViewModel
         _entry = entry;
         FriendlyName = entry.Description?.FriendlyName is { Length: > 0 } name
             ? name
-            : $"uuid:{entry.Uuid}";
+            : entry.Udn;
         SecondaryDetail = ComputeSecondaryDetail(entry);
     }
 
@@ -58,7 +58,7 @@ public partial class DeviceNodeViewModel : ObservableObject, INodeViewModel
         var services = _entry.Description?.Services ?? [];
         var nodes = services
             .Select(s => (INodeViewModel)new ServiceNodeViewModel(
-                s, _entry.LocationUrl, _entry.Uuid, _entry, _services, _entry.DeviceToken))
+                s, _entry.LocationUrl, _entry.Udn, _entry, _services, _entry.DeviceToken))
             .ToList();
         ReplaceWith(nodes); // single Reset — AC-A1.4
     }
@@ -77,7 +77,7 @@ public partial class DeviceNodeViewModel : ObservableObject, INodeViewModel
     [RelayCommand]
     private void FetchXml() =>
         BrowserLaunch.OpenInDefaultBrowser(
-            _entry.LocationUrl, _services.Launcher, _services.Diag, _entry.Uuid);
+            _entry.LocationUrl, _services.Launcher, _services.Diag, _entry.Udn);
 
     // AC-2.9.7: open the read-only Properties window (Story 2.9). The window construction lives in
     // the App-side IPropertiesLauncher impl (a Core VM can't new up a WinUI Window — Pattern 2);

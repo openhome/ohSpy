@@ -41,15 +41,16 @@ internal sealed class DiagnosticRingSink : IDiagnosticRingSink
     // FR-041 Identity column resolution (AC-8.3):
     //   null DeviceUuid                                     → "—"
     //   registry hit with friendly name                     → friendly name
-    //   registry miss OR registry hit without friendly name → "uuid:<uuid>"
+    //   registry miss OR registry hit without friendly name → the UDN string (already carries "uuid:")
     private string ResolveIdentityLabel(DiagnosticContext ctx)
     {
-        if (ctx.DeviceUuid is not { } uuid)
+        if (string.IsNullOrEmpty(ctx.DeviceUuid))
         {
             return "—";
         }
-        var name = _identityLookup.TryGetFriendlyName(uuid);
-        return name ?? $"uuid:{uuid}";
+        var udn = ctx.DeviceUuid;
+        var name = _identityLookup.TryGetFriendlyName(udn);
+        return name ?? udn;
     }
 
     // FR-041 Endpoint column resolution (AC-8.4):

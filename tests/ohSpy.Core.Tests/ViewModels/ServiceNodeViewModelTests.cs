@@ -21,7 +21,7 @@ using ohSpy.Core.ViewModels;
 public sealed class ServiceNodeViewModelTests
 {
     private static readonly Uri DeviceLocation = new("http://192.168.1.100:49152/desc.xml");
-    private static readonly Guid DeviceUuid = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private const string DeviceUdn = "uuid:11111111-1111-1111-1111-111111111111";
 
     private static string FixturePath(string name) =>
         Path.Combine(AppContext.BaseDirectory, "Fixtures", "Scpds", name);
@@ -48,12 +48,12 @@ public sealed class ServiceNodeViewModelTests
 
     // Story 3.2: ServiceNodeViewModel now takes the device RegistryEntry (threaded to ActionNodes).
     private static RegistryEntry Entry(Uri? location = null) =>
-        new(DeviceUuid, location ?? DeviceLocation, DateTime.UtcNow, CancellationToken.None);
+        new(DeviceUdn, location ?? DeviceLocation, DateTime.UtcNow, CancellationToken.None);
 
     private static ServiceNodeViewModel NewVm(
         NodeServices services, ServiceDescription? service = null,
         Uri? location = null, CancellationToken deviceToken = default) =>
-        new(service ?? Service(), location ?? DeviceLocation, DeviceUuid,
+        new(service ?? Service(), location ?? DeviceLocation, DeviceUdn,
             Entry(location), services, deviceToken);
 
     private static async Task WaitUntilAsync(Func<bool> condition, int timeoutMs = 2000)
@@ -162,7 +162,7 @@ public sealed class ServiceNodeViewModelTests
         var entry = diag.Entries.Should().ContainSingle().Subject;
         entry.Severity.Should().Be("Warning");
         entry.Category.Should().Be(DiagCategories.ScpdFetch);
-        entry.Context.DeviceUuid.Should().Be(DeviceUuid);
+        entry.Context.DeviceUuid.Should().Be(DeviceUdn);
         entry.Context.Url.Should().Be(url.ToString());
     }
 
@@ -209,7 +209,7 @@ public sealed class ServiceNodeViewModelTests
         entry.Severity.Should().Be("Warning");
         entry.Category.Should().Be(DiagCategories.ScpdFetch,
             "an oversize body thrown by FetchScpdAsync is a fetch-layer failure");
-        entry.Context.DeviceUuid.Should().Be(DeviceUuid);
+        entry.Context.DeviceUuid.Should().Be(DeviceUdn);
     }
 
     // ─── No re-fetch on collapse/re-expand (AC-2.6.6) ───────────────────────────
@@ -329,7 +329,7 @@ public sealed class ServiceNodeViewModelTests
         act.Should().NotThrow();
         var opened = subLauncher.Opened.Should().ContainSingle().Which;
         opened.Service.Should().BeSameAs(service);
-        opened.Entry.Uuid.Should().Be(DeviceUuid);
+        opened.Entry.Udn.Should().Be(DeviceUdn);
         diag.Entries.Should().BeEmpty("the real launch emits no diagnostic (the stub Warning is gone)");
     }
 }

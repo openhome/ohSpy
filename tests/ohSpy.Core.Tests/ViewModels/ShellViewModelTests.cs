@@ -157,18 +157,18 @@ public sealed class ShellViewModelTests
         await StartAsync(h);
 
         // Seed a device into the registry + a log row.
-        var uuid = Guid.NewGuid();
-        h.Registry.OnAlive(uuid, new Uri("http://192.168.1.60:80/d.xml"), DateTime.UtcNow, "S", null, null, null, CancellationToken.None);
-        h.Vm.SsdpLog.Entries.PrependNewest(new SsdpLogEntry(DateTime.UtcNow, SsdpLogKind.Alive, uuid));
+        var udn = $"uuid:{Guid.NewGuid()}";
+        h.Registry.OnAlive(udn, new Uri("http://192.168.1.60:80/d.xml"), DateTime.UtcNow, "S", null, null, null, CancellationToken.None);
+        h.Vm.SsdpLog.Entries.PrependNewest(new SsdpLogEntry(DateTime.UtcNow, SsdpLogKind.Alive, udn));
         h.Registry.Count.Should().Be(1);
 
-        var removed = new List<Guid>();
+        var removed = new List<string>();
         h.Registry.DeviceRemoved += removed.Add;
 
         await h.Vm.SwitchAdapterAsync(AdapterB);
 
         h.Registry.Count.Should().Be(0, "DeviceRegistry.Clear() emptied it");
-        removed.Should().Contain(uuid, "Clear() raises DeviceRemoved per UUID (popups flip to device-gone)");
+        removed.Should().Contain(udn, "Clear() raises DeviceRemoved per UUID (popups flip to device-gone)");
         h.Vm.SsdpLog.Entries.Should().BeEmpty("SsdpLogViewModel.Clear() emptied the log");
     }
 
@@ -266,10 +266,10 @@ public sealed class ShellViewModelTests
         var tokens = new List<CancellationToken>();
         for (var i = 0; i < 10; i++)
         {
-            var uuid = Guid.NewGuid();
-            h.Registry.OnAlive(uuid, new Uri($"http://192.168.1.{100 + i}:80/d.xml"), DateTime.UtcNow,
+            var udn = $"uuid:{Guid.NewGuid()}";
+            h.Registry.OnAlive(udn, new Uri($"http://192.168.1.{100 + i}:80/d.xml"), DateTime.UtcNow,
                 "S", null, null, null, h.Vm.CurrentAdapterTokenForTest());
-            h.Registry.TryGetEntry(uuid, out var entry).Should().BeTrue();
+            h.Registry.TryGetEntry(udn, out var entry).Should().BeTrue();
             tokens.Add(entry.DeviceToken);
         }
 

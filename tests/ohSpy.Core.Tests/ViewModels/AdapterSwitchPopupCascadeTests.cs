@@ -46,11 +46,11 @@ public sealed class AdapterSwitchPopupCascadeTests
     {
         var ui = new InlineUiDispatcher();
         var registry = new DeviceRegistry(ui);
-        var uuid = Guid.NewGuid();
-        registry.OnAlive(uuid, DeviceLocation, DateTime.UtcNow, "S", null, null, null, CancellationToken.None);
-        registry.TryGetEntry(uuid, out var entry).Should().BeTrue();
+        var udn = $"uuid:{Guid.NewGuid()}";
+        registry.OnAlive(udn, DeviceLocation, DateTime.UtcNow, "S", null, null, null, CancellationToken.None);
+        registry.TryGetEntry(udn, out var entry).Should().BeTrue();
         entry.MarkInFlight();
-        entry.MarkLoaded(StubDeviceDescriptionParser.Description($"uuid:{uuid}"));
+        entry.MarkLoaded(StubDeviceDescriptionParser.Description(udn));
 
         var properties = new PropertiesViewModel(entry, registry, new FakeUriLauncher(), new CapturingDiagnosticEmitter());
         var invocation = new InvocationPopupViewModel(
@@ -83,11 +83,11 @@ public sealed class AdapterSwitchPopupCascadeTests
         // A real adapter CTS — the entry's DeviceCts links to it, and the subscription client's renew
         // loop registers a Lapse(AdapterSwitch) callback on it. Cancelling it IS the switch's step 1.
         using var adapterCts = new CancellationTokenSource();
-        var uuid = Guid.NewGuid();
-        registry.OnAlive(uuid, DeviceLocation, DateTime.UtcNow, "S", null, null, null, adapterCts.Token);
-        registry.TryGetEntry(uuid, out var entry).Should().BeTrue();
+        var udn = $"uuid:{Guid.NewGuid()}";
+        registry.OnAlive(udn, DeviceLocation, DateTime.UtcNow, "S", null, null, null, adapterCts.Token);
+        registry.TryGetEntry(udn, out var entry).Should().BeTrue();
         entry.MarkInFlight();
-        entry.MarkLoaded(StubDeviceDescriptionParser.Description($"uuid:{uuid}"));
+        entry.MarkLoaded(StubDeviceDescriptionParser.Description(udn));
 
         // Real subscription client (never-firing renew delay), bound to the adapter token + a fake host.
         var http = new StubUpnpHttpClient

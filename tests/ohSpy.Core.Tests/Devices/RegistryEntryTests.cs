@@ -13,7 +13,7 @@ using ohSpy.Core.Tests.Fakes;
 public sealed class RegistryEntryTests
 {
     private static RegistryEntry NewEntry(CancellationToken adapterToken = default) =>
-        new(Guid.NewGuid(), new Uri("http://192.0.2.10:49152/desc.xml"), DateTime.UtcNow, adapterToken);
+        new($"uuid:{Guid.NewGuid()}", new Uri("http://192.0.2.10:49152/desc.xml"), DateTime.UtcNow, adapterToken);
 
     [Fact]
     [Trait("ac", "AC-9.0")]
@@ -44,7 +44,7 @@ public sealed class RegistryEntryTests
         entry.MarkInFlight();
         entry.State.Should().Be(DescriptionFetchState.InFlight);
 
-        entry.MarkLoaded(StubDeviceDescriptionParser.Description($"uuid:{entry.Uuid}"));
+        entry.MarkLoaded(StubDeviceDescriptionParser.Description(entry.Udn));
         entry.State.Should().Be(DescriptionFetchState.Loaded);
     }
 
@@ -76,7 +76,7 @@ public sealed class RegistryEntryTests
     public void MarkLoaded_FromPending_Throws_AC91()
     {
         var entry = NewEntry();
-        var act = () => entry.MarkLoaded(StubDeviceDescriptionParser.Description($"uuid:{entry.Uuid}"));
+        var act = () => entry.MarkLoaded(StubDeviceDescriptionParser.Description(entry.Udn));
         act.Should().Throw<InvalidOperationException>();
     }
 
@@ -96,10 +96,10 @@ public sealed class RegistryEntryTests
     {
         var entry = NewEntry();
         entry.MarkInFlight();
-        entry.MarkLoaded(StubDeviceDescriptionParser.Description($"uuid:{entry.Uuid}"));
+        entry.MarkLoaded(StubDeviceDescriptionParser.Description(entry.Udn));
 
         entry.Invoking(e => e.MarkInFlight()).Should().Throw<InvalidOperationException>();
-        entry.Invoking(e => e.MarkLoaded(StubDeviceDescriptionParser.Description($"uuid:{e.Uuid}")))
+        entry.Invoking(e => e.MarkLoaded(StubDeviceDescriptionParser.Description(e.Udn)))
             .Should().Throw<InvalidOperationException>();
         entry.Invoking(e => e.MarkFailed("x")).Should().Throw<InvalidOperationException>();
     }
@@ -112,7 +112,7 @@ public sealed class RegistryEntryTests
         entry.MarkFailed("dead");
 
         entry.Invoking(e => e.MarkInFlight()).Should().Throw<InvalidOperationException>();
-        entry.Invoking(e => e.MarkLoaded(StubDeviceDescriptionParser.Description($"uuid:{e.Uuid}")))
+        entry.Invoking(e => e.MarkLoaded(StubDeviceDescriptionParser.Description(e.Udn)))
             .Should().Throw<InvalidOperationException>();
         entry.Invoking(e => e.MarkFailed("again")).Should().Throw<InvalidOperationException>();
     }
@@ -127,7 +127,7 @@ public sealed class RegistryEntryTests
         entry.MarkInFlight();
         entry.Description.Should().BeNull("InFlight has no description");
 
-        var desc = StubDeviceDescriptionParser.Description($"uuid:{entry.Uuid}");
+        var desc = StubDeviceDescriptionParser.Description(entry.Udn);
         entry.MarkLoaded(desc);
         entry.Description.Should().BeSameAs(desc);
     }

@@ -23,19 +23,19 @@ public sealed class DeviceNodeViewModelTests
         new CapturingDiagnosticEmitter(), new FakeUriLauncher(), new FakePropertiesLauncher(),
         new FakeInvocationPopupLauncher(), new FakeSubscriptionPopupLauncher());
 
-    private static RegistryEntry PendingEntry(Guid? uuid = null, Uri? location = null) =>
-        new(uuid ?? Guid.NewGuid(), location ?? BaseLocation, DateTime.UtcNow, CancellationToken.None);
+    private static RegistryEntry PendingEntry(string? udn = null, Uri? location = null) =>
+        new(udn ?? $"uuid:{Guid.NewGuid()}", location ?? BaseLocation, DateTime.UtcNow, CancellationToken.None);
 
     private static RegistryEntry LoadedEntry(
-        Guid? uuid = null,
+        string? udn = null,
         Uri? location = null,
         string friendlyName = "Test Device",
         string deviceType = "urn:schemas-upnp-org:device:Basic:1")
     {
-        var entry = PendingEntry(uuid, location);
+        var entry = PendingEntry(udn, location);
         entry.MarkInFlight();
         entry.MarkLoaded(new DeviceDescription(
-            friendlyName, deviceType, $"uuid:{entry.Uuid}",
+            friendlyName, deviceType, entry.Udn,
             null, "Test Manufacturer", null, "Test Model",
             null, null, null, null, null,
             Array.Empty<ServiceDescription>()));
@@ -56,11 +56,11 @@ public sealed class DeviceNodeViewModelTests
     [Trait("ac", "AC-2.5.4")]
     public void Constructor_WithNullFriendlyName_FallsBackToUuid_AC254()
     {
-        var uuid = Guid.NewGuid();
-        var entry = PendingEntry(uuid: uuid); // Description is null
+        var udn = $"uuid:{Guid.NewGuid()}";
+        var entry = PendingEntry(udn: udn); // Description is null
         var vm = new DeviceNodeViewModel(entry, NodeServices);
 
-        vm.FriendlyName.Should().Be($"uuid:{uuid}");
+        vm.FriendlyName.Should().Be(udn);
     }
 
     [Fact]
@@ -134,11 +134,11 @@ public sealed class DeviceNodeViewModelTests
     [Trait("ac", "AC-2.5.8")]
     public void RefreshFrom_UpdatesFriendlyNameAndSecondaryDetail_AC258()
     {
-        var uuid = Guid.NewGuid();
-        var entry = LoadedEntry(uuid: uuid, friendlyName: "Old Name");
+        var udn = $"uuid:{Guid.NewGuid()}";
+        var entry = LoadedEntry(udn: udn, friendlyName: "Old Name");
         var vm = new DeviceNodeViewModel(entry, NodeServices);
 
-        var newEntry = LoadedEntry(uuid: uuid, friendlyName: "New Name",
+        var newEntry = LoadedEntry(udn: udn, friendlyName: "New Name",
             deviceType: "urn:schemas-upnp-org:device:MediaServer:1");
         vm.RefreshFrom(newEntry);
 
@@ -188,7 +188,7 @@ public sealed class DeviceNodeViewModelTests
         var entry = PendingEntry();
         entry.MarkInFlight();
         entry.MarkLoaded(new DeviceDescription(
-            "Test Device", "urn:schemas-upnp-org:device:MediaRenderer:1", $"uuid:{entry.Uuid}",
+            "Test Device", "urn:schemas-upnp-org:device:MediaRenderer:1", entry.Udn,
             null, "Mfr", null, "Model",
             null, null, null, null, null,
             services));
@@ -311,15 +311,15 @@ public sealed class DeviceNodeViewModelTests
     {
         var (services, launcher, diag, _) = CapturingServices();
         launcher.ThrowOnLaunch = new InvalidOperationException("no browser");
-        var uuid = Guid.NewGuid();
-        var vm = new DeviceNodeViewModel(LoadedEntry(uuid: uuid), services);
+        var udn = $"uuid:{Guid.NewGuid()}";
+        var vm = new DeviceNodeViewModel(LoadedEntry(udn: udn), services);
 
         var act = () => vm.FetchXmlCommand.Execute(null);
 
         act.Should().NotThrow();
         var warning = diag.Entries.Should().ContainSingle().Which;
         warning.Category.Should().Be(DiagCategories.ShellExecute);
-        warning.Context.DeviceUuid.Should().Be(uuid);
+        warning.Context.DeviceUuid.Should().Be(udn);
     }
 
     [Fact]
@@ -329,14 +329,14 @@ public sealed class DeviceNodeViewModelTests
         // Story 2.9 replaces the 2.8 "not yet implemented" stub: the command now crosses the
         // Core/App seam via IPropertiesLauncher, handing the device's RegistryEntry across.
         var (services, launcher, diag, properties) = CapturingServices();
-        var uuid = Guid.NewGuid();
-        var vm = new DeviceNodeViewModel(LoadedEntry(uuid: uuid), services);
+        var udn = $"uuid:{Guid.NewGuid()}";
+        var vm = new DeviceNodeViewModel(LoadedEntry(udn: udn), services);
 
         var act = () => vm.OpenPropertiesCommand.Execute(null);
 
         act.Should().NotThrow();
         launcher.Launched.Should().BeEmpty("opening Properties is not a shell-open");
         diag.Entries.Should().BeEmpty("the 2.8 NotImplemented warning is removed in 2.9");
-        properties.Opened.Should().ContainSingle().Which.Uuid.Should().Be(uuid);
+        properties.Opened.Should().ContainSingle().Which.Udn.Should().Be(udn);
     }
 }
