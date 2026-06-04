@@ -20,4 +20,5 @@ public sealed record NodeServices(
     IDiagnosticEmitter Diag,
     IUriLauncher Launcher,           // Story 2.8 — context-menu shell-open seam
     IPropertiesLauncher PropertiesLauncher,  // Story 2.9 — open the Properties window
-    IInvocationPopupLauncher InvocationPopupLauncher); // Story 3.2 — open the invocation popup
+    IInvocationPopupLauncher InvocationPopupLauncher,  // Story 3.2 — open the invocation popup
+    ISubscriptionPopupLauncher SubscriptionPopupLauncher); // Story 4.3 — open the subscription popup

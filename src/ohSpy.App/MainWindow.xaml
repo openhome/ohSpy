@@ -106,7 +106,7 @@
                                         <MenuFlyout>
                                             <MenuFlyoutItem Text="Fetch service XML"
                                                             Command="{x:Bind FetchServiceXmlCommand}" />
-                                            <MenuFlyoutItem Text="Subscribe (coming in Epic 4)"
+                                            <MenuFlyoutItem Text="Subscribe"
                                                             Command="{x:Bind SubscribeCommand}" />
                                         </MenuFlyout>
                                     </StackPanel.ContextFlyout>

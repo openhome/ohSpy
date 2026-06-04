@@ -39,10 +39,12 @@ public sealed class ServiceNodeViewModelTests
         StubUpnpHttpClient http, IScpdParser parser,
         IUiDispatcher? ui = null, IDiagnosticEmitter? diag = null, IUriLauncher? launcher = null,
         IPropertiesLauncher? propertiesLauncher = null,
-        IInvocationPopupLauncher? invocationPopupLauncher = null) =>
+        IInvocationPopupLauncher? invocationPopupLauncher = null,
+        ISubscriptionPopupLauncher? subscriptionPopupLauncher = null) =>
         new(http, parser, ui ?? new InlineUiDispatcher(), diag ?? new CapturingDiagnosticEmitter(),
             launcher ?? new FakeUriLauncher(), propertiesLauncher ?? new FakePropertiesLauncher(),
-            invocationPopupLauncher ?? new FakeInvocationPopupLauncher());
+            invocationPopupLauncher ?? new FakeInvocationPopupLauncher(),
+            subscriptionPopupLauncher ?? new FakeSubscriptionPopupLauncher());
 
     // Story 3.2: ServiceNodeViewModel now takes the device RegistryEntry (threaded to ActionNodes).
     private static RegistryEntry Entry(Uri? location = null) =>
@@ -309,22 +311,25 @@ public sealed class ServiceNodeViewModelTests
             .Which.Should().Be(new Uri("http://10.0.0.5/scpd.xml"));
     }
 
+    // AC-4.3.8: the 2.8 Feature.NotImplemented stub is replaced by the real launch — SubscribeCommand
+    // now opens the subscription popup with this node's (service, entry), and emits NO diagnostic.
     [Fact]
-    [Trait("ac", "AC-2.8.5")]
-    public void SubscribeCommand_Stub_WarnsNotImplemented_AC285()
+    [Trait("ac", "AC-4.3.8")]
+    public void SubscribeCommand_OpensSubscriptionPopup_WithServiceAndEntry_AC438()
     {
-        var launcher = new FakeUriLauncher();
+        var subLauncher = new FakeSubscriptionPopupLauncher();
         var diag = new CapturingDiagnosticEmitter();
+        var service = Service(serviceType: "urn:schemas-upnp-org:service:AVTransport:1");
         var services = MakeNodeServices(new StubUpnpHttpClient(), new StubScpdParser(),
-            diag: diag, launcher: launcher);
-        var vm = NewVm(services);
+            diag: diag, subscriptionPopupLauncher: subLauncher);
+        var vm = NewVm(services, service: service);
 
         var act = () => vm.SubscribeCommand.Execute(null);
 
         act.Should().NotThrow();
-        launcher.Launched.Should().BeEmpty();
-        var warning = diag.Entries.Should().ContainSingle().Which;
-        warning.Category.Should().Be(DiagCategories.FeatureNotImplemented);
-        warning.Message.Should().Be("subscribe not yet implemented");
+        var opened = subLauncher.Opened.Should().ContainSingle().Which;
+        opened.Service.Should().BeSameAs(service);
+        opened.Entry.Uuid.Should().Be(DeviceUuid);
+        diag.Entries.Should().BeEmpty("the real launch emits no diagnostic (the stub Warning is gone)");
     }
 }

@@ -1,5 +1,11 @@
 # Deferred Work
 
+## Deferred from: code review of 4-3-subscription-popup-event-list-latest-property-values-multiple-concurrent-popups (2026-06-04)
+
+- **`SubscriptionPopupViewModel.StatusMessage` shows the SID, not the device-granted TIMEOUT** [`src/ohSpy.Core/ViewModels/SubscriptionPopupViewModel.cs`] — AC-4.3.1's example wanted the granted lease (e.g. "device-granted TIMEOUT: 300 s"), but the Story 4.2 `SubscriptionHandle` seam exposes only `Sid`, not the granted `Timeout`. SID is useful (Wireshark/log correlation) and the dev correctly did not break the 4.2 freeze for this. Future micro-story: add `TimeSpan GrantedTimeout` to `SubscriptionHandle` (plumbed from `SubscribeResponse.Timeout`, which `SubscriptionClient` already has) and surface it in the popup status line. Low priority, non-blocking.
+- **Manual UI smoke (Story 4.3 Task 12) FULLY deferred** — requires an event-emitting Linn DS, reachable only via the retro Action-I `OHSPY_ADAPTER` dev override (the Sky IGD emits no useful events). Steps: subscribe to a DS service → newest-first stream + live latest-values; 2nd concurrent popup → independent; trigger lapse → reason banner; close mid-stream → clean UNSUBSCRIBE. Unlike 3.2/3.3 (where some steps passed), ZERO of 4.3's event-stream smoke can run on the current network → Epic 4's live-eventing payload is unverified on a real device until Action I lands. Core VM logic is fully unit-tested (incl. 6 DeferredUiDispatcher marshalling guards) as the compensating control.
+
+
 ## Deferred from: code review of 3-3-constrained-inputs-allowedvaluelist-dropdown-allowedvaluerange-numeric (2026-06-04)
 
 - **`NoInputsVisibility` binding missing `Mode=OneWay`** [`src/ohSpy.App/Views/InvocationPopupWindow.xaml:136`] — pre-existing 3.2 pattern, not introduced by 3.3. `NoInputsVisibility` is a static one-time computation (arg count does not change) so the binding correctness is unaffected. Add `Mode=OneWay` in a future XAML clean-up pass alongside any similar cases in the window.

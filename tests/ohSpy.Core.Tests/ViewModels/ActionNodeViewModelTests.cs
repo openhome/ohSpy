@@ -27,7 +27,7 @@ public sealed class ActionNodeViewModelTests
     private static NodeServices Services(IInvocationPopupLauncher? popup = null) =>
         new(new StubUpnpHttpClient(), new StubScpdParser(), new InlineUiDispatcher(),
             new CapturingDiagnosticEmitter(), new FakeUriLauncher(), new FakePropertiesLauncher(),
-            popup ?? new FakeInvocationPopupLauncher());
+            popup ?? new FakeInvocationPopupLauncher(), new FakeSubscriptionPopupLauncher());
 
     private static ActionNodeViewModel Node(string name, NodeServices? services = null) =>
         new(Action(name), Service(), Entry(), services ?? Services());

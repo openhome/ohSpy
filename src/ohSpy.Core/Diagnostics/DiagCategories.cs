@@ -106,8 +106,9 @@ public static class DiagCategories
     /// shell-open is refused (non-http(s) scheme) or fails (no default browser, etc.).</summary>
     public const string ShellExecute = "Shell.Execute";
 
-    /// <summary>Mandatory context: (none beyond message). Temporary — emitted by the Story 2.8
-    /// Subscribe stub (removed in Story 4.1) and the Properties stub (replaced in Story 2.9).
-    /// A placeholder for menu items whose real handler lands in a later epic.</summary>
+    /// <summary>Mandatory context: (none beyond message). Was the placeholder for the Story 2.8
+    /// Properties + Subscribe menu stubs (Properties replaced in Story 2.9, Subscribe in Story 4.3).
+    /// Now production-UNUSED but RETAINED — it is pinned by the DiagCategories exact-set guard test;
+    /// remove it in a deliberate future PR that also updates that guard.</summary>
     public const string FeatureNotImplemented = "Feature.NotImplemented";
 }

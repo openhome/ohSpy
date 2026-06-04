@@ -21,7 +21,7 @@ public sealed class DeviceNodeViewModelTests
     private static readonly NodeServices NodeServices = new(
         new StubUpnpHttpClient(), new StubScpdParser(), new InlineUiDispatcher(),
         new CapturingDiagnosticEmitter(), new FakeUriLauncher(), new FakePropertiesLauncher(),
-        new FakeInvocationPopupLauncher());
+        new FakeInvocationPopupLauncher(), new FakeSubscriptionPopupLauncher());
 
     private static RegistryEntry PendingEntry(Guid? uuid = null, Uri? location = null) =>
         new(uuid ?? Guid.NewGuid(), location ?? BaseLocation, DateTime.UtcNow, CancellationToken.None);
@@ -221,7 +221,7 @@ public sealed class DeviceNodeViewModelTests
         var http = new StubUpnpHttpClient();
         var services = new NodeServices(http, new StubScpdParser(), new InlineUiDispatcher(),
             new CapturingDiagnosticEmitter(), new FakeUriLauncher(), new FakePropertiesLauncher(),
-            new FakeInvocationPopupLauncher());
+            new FakeInvocationPopupLauncher(), new FakeSubscriptionPopupLauncher());
         var entry = LoadedEntryWithServices(
             Svc("urn:schemas-upnp-org:service:RenderingControl:1", "/RC/Scpd.xml"));
         var vm = new DeviceNodeViewModel(entry, services);
@@ -272,7 +272,8 @@ public sealed class DeviceNodeViewModelTests
         var diag = new CapturingDiagnosticEmitter();
         var properties = new FakePropertiesLauncher();
         return (new NodeServices(new StubUpnpHttpClient(), new StubScpdParser(),
-            new InlineUiDispatcher(), diag, launcher, properties, new FakeInvocationPopupLauncher()),
+            new InlineUiDispatcher(), diag, launcher, properties, new FakeInvocationPopupLauncher(),
+            new FakeSubscriptionPopupLauncher()),
             launcher, diag, properties);
     }
 

@@ -93,6 +93,8 @@ public partial class App : Application
         Services.GetRequiredService<PropertiesLauncher>().ShellWindow = _window;
         // Story 3.2: same FR-046 parent injection for the invocation-popup launcher.
         Services.GetRequiredService<InvocationPopupLauncher>().ShellWindow = _window;
+        // Story 4.3: same FR-046 parent injection for the subscription-popup launcher.
+        Services.GetRequiredService<SubscriptionPopupLauncher>().ShellWindow = _window;
         _window.Closed += OnWindowClosed;
         _window.Activate();
     }

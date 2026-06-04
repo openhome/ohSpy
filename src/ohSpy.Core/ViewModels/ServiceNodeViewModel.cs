@@ -155,14 +155,14 @@ public partial class ServiceNodeViewModel : ObservableObject, INodeViewModel
             new Uri(_deviceLocation, _service.ScpdUrl),
             _services.Launcher, _services.Diag, _deviceUuid);
 
-    // STUB — AC-2.8.5. The real GENA subscribe handler lands in Epic 4 (Story 4.1). The menu
-    // item is visible+enabled and labelled "Subscribe (coming in Epic 4)"; choosing it emits a
-    // Warning so the action is observable in diagnostics. Story 4.1 removes this stub + relabel.
+    // AC-4.3.8: open the subscription popup (Story 4.3). The ServiceNode already holds _service +
+    // _parentEntry + _services (no context threading needed, unlike 3.2's enriched ActionNode), so the
+    // launch mirrors ActionNodeViewModel.OpenInvocationPopup. Crosses the Core/App boundary via the
+    // ISubscriptionPopupLauncher seam (Core interface, App impl). Replaced the 2.8 Feature.NotImplemented
+    // stub.
     [RelayCommand]
     private void Subscribe() =>
-        _services.Diag.Warning(DiagCategories.FeatureNotImplemented,
-            "subscribe not yet implemented",
-            new DiagnosticContext { DeviceUuid = _deviceUuid, ServiceId = _service.ServiceId });
+        _services.SubscriptionPopupLauncher.Open(_service, _parentEntry);
 
     string INodeViewModel.Label => Label; // explicit impl returns the observable Label
 }
