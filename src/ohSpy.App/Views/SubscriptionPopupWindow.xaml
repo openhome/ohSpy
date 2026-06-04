@@ -84,20 +84,24 @@
                     FontStyle="Italic"
                     Visibility="{x:Bind NoLatestVisibility, Mode=OneWay}" />
 
-                <ItemsControl ItemsSource="{x:Bind ViewModel.LatestPropertyValues}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:LatestPropertyValue">
-                            <Grid Margin="0,2" ColumnSpacing="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="220" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="{x:Bind Name}" TextWrapping="Wrap" Style="{StaticResource PropNameStyle}" />
-                                <TextBlock Grid.Column="1" Text="{x:Bind Value, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <!-- Height-capped + scrollable so a large property set (e.g. openhome.org:Product with
+                     its many vars + a huge SourceXml) stays anchored but does not overflow the window. -->
+                <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.LatestPropertyValues}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:LatestPropertyValue">
+                                <Grid Margin="0,2" ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="220" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{x:Bind Name}" TextWrapping="Wrap" Style="{StaticResource PropNameStyle}" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind Value, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
             </StackPanel>
         </Border>
 
