@@ -111,11 +111,11 @@ public partial class ServiceNodeViewModel : ObservableObject, INodeViewModel
                 if (first)
                 {
                     first = false;
-                    _services.Ui.Post(() => { Children.Clear(); Children.Add(node); }); // drop placeholder + first action atomically
+                    _services.Ui.Post(() => { Children.Clear(); InsertSorted(node); }); // drop placeholder + first action atomically
                 }
                 else
                 {
-                    _services.Ui.Post(() => Children.Add(node)); // incremental append (FR-100)
+                    _services.Ui.Post(() => InsertSorted(node)); // sorted incremental insert (FR-100 + alphabetical)
                 }
             }
 
@@ -143,6 +143,20 @@ public partial class ServiceNodeViewModel : ObservableObject, INodeViewModel
     {
         Children.Clear();
         foreach (var child in newChildren) Children.Add(child);
+    }
+
+    // Insert an action node keeping Children alphabetical by action name (case-insensitive). The
+    // SCPD XML order is arbitrary and confusing to operators; a sorted list is easier to scan.
+    // Streaming still posts one node at a time (FR-100) — each lands at its sorted position rather
+    // than appended, so the list is correctly ordered no matter what order the parser yields.
+    // Runs on the UI thread (always invoked inside _services.Ui.Post, which owns Children).
+    private void InsertSorted(INodeViewModel node)
+    {
+        var i = 0;
+        while (i < Children.Count &&
+               string.Compare(Children[i].Label, node.Label, StringComparison.OrdinalIgnoreCase) <= 0)
+            i++;
+        Children.Insert(i, node);
     }
 
     // AC-2.8.4: open the SCPD (resolved against the device LocationUrl, like LoadActionsAsync)

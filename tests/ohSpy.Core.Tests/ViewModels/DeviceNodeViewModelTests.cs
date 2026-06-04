@@ -208,8 +208,28 @@ public sealed class DeviceNodeViewModelTests
 
         vm.Children.Should().HaveCount(2);
         vm.Children.Should().AllBeOfType<ServiceNodeViewModel>();
-        vm.Children.Select(c => c.Label).Should().Equal("RenderingControl:1", "ConnectionManager:1");
+        // Sorted alphabetically by service name (same domain) — NOT the XML order (RC then CM).
+        vm.Children.Select(c => c.Label).Should().Equal("ConnectionManager:1", "RenderingControl:1");
         vm.Children.OfType<LoadingPlaceholderViewModel>().Should().BeEmpty();
+    }
+
+    [Fact]
+    [Trait("ac", "AC-2.6.2")]
+    public void Expand_SortsServices_ByDomainThenName_NotXmlOrder()
+    {
+        // XML order is deliberately scrambled across two domains; expected order is domain-first
+        // (av-openhome-org < schemas-upnp-org), then service name within each domain.
+        var entry = LoadedEntryWithServices(
+            Svc("urn:schemas-upnp-org:service:RenderingControl:1", "/RC/Scpd.xml"),
+            Svc("urn:av-openhome-org:service:Product:1", "/Product/Scpd.xml"),
+            Svc("urn:schemas-upnp-org:service:AVTransport:1", "/AVT/Scpd.xml"),
+            Svc("urn:av-openhome-org:service:Info:1", "/Info/Scpd.xml"));
+        var vm = new DeviceNodeViewModel(entry, NodeServices);
+
+        vm.IsExpanded = true;
+
+        vm.Children.Select(c => c.Label)
+            .Should().Equal("Info:1", "Product:1", "AVTransport:1", "RenderingControl:1");
     }
 
     [Fact]

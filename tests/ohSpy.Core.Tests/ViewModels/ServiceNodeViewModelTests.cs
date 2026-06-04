@@ -105,7 +105,7 @@ public sealed class ServiceNodeViewModelTests
 
     [Fact]
     [Trait("ac", "AC-2.6.3")]
-    public async Task FirstExpand_HappyPath_StreamsActionsInOrder_RemovesPlaceholder_AC263()
+    public async Task FirstExpand_HappyPath_StreamsActionsSortedByName_RemovesPlaceholder_AC263()
     {
         var http = new StubUpnpHttpClient
         {
@@ -113,6 +113,7 @@ public sealed class ServiceNodeViewModelTests
         };
         var parser = new StubScpdParser
         {
+            // Parser yields scrambled order; the node sorts them alphabetically as they stream.
             Actions = new[] { Action("GetMute"), Action("SetMute"), Action("GetVolume") },
         };
         var vm = NewVm(MakeNodeServices(http, parser));
@@ -121,7 +122,7 @@ public sealed class ServiceNodeViewModelTests
         await WaitUntilAsync(() => vm.Children.Count == 3);
 
         vm.Children.Should().AllBeOfType<ActionNodeViewModel>();
-        vm.Children.Select(c => c.Label).Should().Equal("GetMute", "SetMute", "GetVolume");
+        vm.Children.Select(c => c.Label).Should().Equal("GetMute", "GetVolume", "SetMute");
         vm.Children.OfType<LoadingPlaceholderViewModel>().Should().BeEmpty();
     }
 
@@ -136,8 +137,9 @@ public sealed class ServiceNodeViewModelTests
         vm.IsExpanded = true;
         await WaitUntilAsync(() => vm.Children.Count == 5);
 
+        // Sorted alphabetically by action name (case-insensitive), not SCPD document order.
         vm.Children.Select(c => c.Label)
-            .Should().Equal("GetMute", "SetMute", "GetVolume", "SetVolume", "VolumeInc");
+            .Should().Equal("GetMute", "GetVolume", "SetMute", "SetVolume", "VolumeInc");
     }
 
     // ─── Failure paths (AC-2.6.4) ───────────────────────────────────────────────

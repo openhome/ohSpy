@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ohSpy.Core.Devices;
+using ohSpy.Core.Models;
 
 public partial class DeviceNodeViewModel : ObservableObject, INodeViewModel
 {
@@ -56,9 +57,15 @@ public partial class DeviceNodeViewModel : ObservableObject, INodeViewModel
         if (Interlocked.Exchange(ref _servicesBuilt, 1) == 1) return;
 
         var services = _entry.Description?.Services ?? [];
+        // Sort services alphabetically by URN domain, then service name — the device-XML order is
+        // arbitrary and confusing to operators; a stable, readable order is easier to scan.
         var nodes = services
-            .Select(s => (INodeViewModel)new ServiceNodeViewModel(
-                s, _entry.LocationUrl, _entry.Udn, _entry, _services, _entry.DeviceToken))
+            .Select(s => (svc: s, key: ServiceSortKey(s)))
+            .OrderBy(x => x.key.Domain, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.key.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.svc.ServiceType, StringComparer.OrdinalIgnoreCase) // version/raw tiebreak — deterministic
+            .Select(x => (INodeViewModel)new ServiceNodeViewModel(
+                x.svc, _entry.LocationUrl, _entry.Udn, _entry, _services, _entry.DeviceToken))
             .ToList();
         ReplaceWith(nodes); // single Reset — AC-A1.4
     }
@@ -84,6 +91,26 @@ public partial class DeviceNodeViewModel : ObservableObject, INodeViewModel
     // this command just hands off the entry. Synchronous fire-and-forget (matches FetchXml).
     [RelayCommand]
     private void OpenProperties() => _services.PropertiesLauncher.OpenProperties(_entry);
+
+    // Sort key for the service list: (URN domain, service name). A serviceType is shaped
+    // "urn:<domain>:service:<name>:<version>" (e.g. "urn:schemas-upnp-org:service:AVTransport:1"
+    // or "urn:av-openhome-org:service:Product:1"). A non-conforming serviceType (no ":service:"
+    // marker) sorts by the whole string under an empty domain, so it lands deterministically.
+    private static (string Domain, string Name) ServiceSortKey(ServiceDescription service)
+    {
+        var type = service.ServiceType;
+        const string marker = ":service:";
+        var idx = type.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0) return ("", type);
+
+        var domain = type.StartsWith("urn:", StringComparison.OrdinalIgnoreCase)
+            ? type[4..idx]
+            : type[..idx];
+        var tail = type[(idx + marker.Length)..];
+        var colon = tail.IndexOf(':');
+        var name = colon >= 0 ? tail[..colon] : tail;
+        return (domain, name);
+    }
 
     // FR-051: secondary detail is "<deviceTypeTail> <U+00B7 middle-dot> <host>:<port>".
     // Degenerate device metadata is guarded: an empty type tail drops the separator, and an
