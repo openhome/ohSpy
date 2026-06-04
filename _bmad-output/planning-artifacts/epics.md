@@ -1831,6 +1831,8 @@ I want `View → Diagnostics` to open a live, virtualised diagnostic viewer show
 
 ### Story 5.2: Adapter Switch — `View → Network adapter` Menu + Atomic Rebind
 
+> **Re-sequenced 2026-06-04 (Epic 3 retrospective):** this story now executes as the **last story of Epic 4**, not Epic 5. Its atomic-rebind sequence depends on Story 4.1's `EventCallbackHost` (steps 3 + 9) and Story 4.3's subscription popup (the popup-teardown AC) — a one-way forward dependency, so it must run after 4.1/4.3. Prerequisite: the **A23 transport-factory** refactor (the SSDP transport is still a Story 2.1 singleton; rebind needs per-adapter dispose + reconstruct). The story key stays `5-2-…` to preserve architecture A23 / FR-050 / cross-references; only the execution order moves. See `epic-3-retro-2026-06-04.md`.
+
 As a Linn engineer,
 I want `View → Network adapter` to show a radio list of every eligible IPv4 adapter (with the current one indicated) and let me select a different adapter to trigger an atomic rebind — tearing down the SSDP transport + callback host, clearing the registry, cancelling in-flight fetches, notifying every open popup, rebinding on the new adapter, and re-running the startup discovery — all within the FR-050 2 s budget,
 So that I can move between development networks (lab Wi-Fi, wired test rig, dev laptop) without restarting the tool.
