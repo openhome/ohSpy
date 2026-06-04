@@ -1,10 +1,20 @@
 namespace ohSpy.Core.Discovery;
 
+using System.Threading.Channels;
 using ohSpy.Core.Devices;
+using ohSpy.Core.Models;
 using ohSpy.Core.Threading;
 
+/// <summary>
+/// Reads the active <see cref="ISsdpTransport"/>'s datagram stream and routes announcements
+/// into the registry + the SSDP log. Singleton for its lifetime (so <c>SsdpLogViewModel</c>'s
+/// <see cref="AnnouncementReceived"/> subscription stays valid across adapter switches), but
+/// its read loop is REBINDABLE: Amendment A23 (Story 5.2) decouples the service from any one
+/// transport — it reads the <see cref="ChannelReader{SsdpDatagram}"/> handed to
+/// <see cref="StartAsync"/> / <see cref="RebindAsync"/> (the scope-owned reader), so an
+/// adapter switch points it at the fresh transport's reader without re-subscribing the log.
+/// </summary>
 internal sealed class DiscoveryService(
-    ISsdpTransport transport,
     DeviceRegistry registry,
     SsdpParser parser,
     IUiDispatcher ui) : IDiscoveryService
@@ -14,17 +24,41 @@ internal sealed class DiscoveryService(
     private Task? _readLoop;
     private int _started;
 
-    public Task StartAsync(CancellationToken adapterToken, CancellationToken ct)
+    public Task StartAsync(ChannelReader<SsdpDatagram> reader, CancellationToken adapterToken, CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(reader);
         if (Interlocked.Exchange(ref _started, 1) == 1)
             throw new InvalidOperationException("StartAsync already called");
-        _readLoop = Task.Run(() => ReadLoopAsync(adapterToken, ct));
+        _readLoop = Task.Run(() => ReadLoopAsync(reader, adapterToken, ct));
         return Task.CompletedTask;
     }
 
-    /// <summary>Re-issues M-SEARCH and prunes non-responders (E5). Stub in Story 2.4.</summary>
-    public Task RescanAsync(CancellationToken ct) =>
-        transport.SendMSearchAsync(TimeSpan.FromSeconds(5), ct);
+    /// <summary>
+    /// A23 / Story 5.2 atomic rebind: drains the read loop bound to the OLD (now-disposed)
+    /// transport, resets the start guard, and starts a fresh loop against the NEW scope's
+    /// <paramref name="reader"/> + adapter token. The old reader has already been completed by
+    /// the old transport's <see cref="ISsdpTransport.DisposeAsync"/>, so the old loop's
+    /// <c>ReadAllAsync</c> has finished; the await is the deliberate drain join.
+    /// </summary>
+    public async Task RebindAsync(ChannelReader<SsdpDatagram> reader, CancellationToken adapterToken, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+
+        // Drain the previous loop (its reader was completed/cancelled by the old scope's teardown).
+        // VSTHRD003 suppressed: _readLoop is our own background loop, awaited here as the rebind join.
+        if (_readLoop is not null)
+        {
+#pragma warning disable VSTHRD003
+            try { await _readLoop.ConfigureAwait(false); }
+#pragma warning restore VSTHRD003
+            catch { /* loop exits via cancellation or channel completion */ }
+        }
+
+        // Reset the single-start guard and bind the fresh reader. StartAsync only kicks the background
+        // Task.Run loop and returns a completed task — awaiting it is the synchronous start join.
+        Interlocked.Exchange(ref _started, 0);
+        await StartAsync(reader, adapterToken, ct).ConfigureAwait(false);
+    }
 
     public async ValueTask DisposeAsync()
     {
@@ -39,12 +73,12 @@ internal sealed class DiscoveryService(
         }
     }
 
-    private async Task ReadLoopAsync(CancellationToken adapterToken, CancellationToken ct)
+    private async Task ReadLoopAsync(ChannelReader<SsdpDatagram> reader, CancellationToken adapterToken, CancellationToken ct)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(adapterToken, ct);
         try
         {
-            await foreach (var datagram in transport.IncomingDatagrams
+            await foreach (var datagram in reader
                                .ReadAllAsync(linked.Token)
                                .ConfigureAwait(false))
             {

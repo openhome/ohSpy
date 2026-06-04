@@ -1,21 +1,30 @@
 namespace ohSpy.Core.Discovery;
 
 using System.Net;
+using System.Threading.Channels;
 using ohSpy.Core.Diagnostics;
+using ohSpy.Core.Models;
 
 /// <summary>
 /// The adapter level of the Decision 7 cancellation hierarchy
 /// (<c>app → adapter → device → popup</c>). Owns one <see cref="ISsdpTransport"/>,
-/// selects the launch-default adapter (FR-048), binds the transport, and issues the
-/// startup M-SEARCH (FR-004). Lifetime is bounded by adapter selection — constructed
-/// by the app-startup orchestrator (<c>App.OnLaunched</c> now; <c>ShellViewModel</c>
-/// in Story 2.5), NOT a DI singleton.
+/// binds the chosen adapter (FR-048), and issues the startup M-SEARCH (FR-004).
+/// Lifetime is bounded by adapter selection — constructed by <c>ShellViewModel</c>
+/// (Story 2.5), NOT a DI singleton.
 /// <para>
-/// This story scaffolds the FR-050 atomic-switch SHAPE only
-/// (<see cref="CurrentAdapterIPv4"/> / <see cref="AdapterToken"/> / budgeted
-/// <see cref="DisposeAsync"/>). The full switch sequence (Decision 7 steps 3–6:
-/// callback-host teardown, per-device CTS cancel, registry clear) is Story 5.2 and
-/// references types that do not exist yet.
+/// Amendment A23 (Story 5.2): the transport is no longer a DI singleton — the scope
+/// constructs and OWNS it via the injected <see cref="Func{ISsdpTransport}"/> factory
+/// (Pattern 7, matching the popup-VM factories), and disposes it on teardown. The
+/// scope EXPOSES the live transport's <see cref="IncomingDatagrams"/> so the singleton
+/// <c>DiscoveryService</c> reads the SCOPE-OWNED instance (never a second DI-resolved
+/// one). A fresh scope ⇒ a fresh transport bound to the new adapter — the atomic switch.
+/// </para>
+/// <para>
+/// The FR-050 atomic-switch sequence is owned by <c>ShellViewModel.SwitchAdapterAsync</c>;
+/// this scope's <see cref="DisposeAsync"/> performs Decision 7 steps 1 (cancel), 2
+/// (transport dispose within the 2 s budget) and 7 (dispose the adapter CTS). Steps 3–6
+/// (callback host, fetch drain, registry/log clear) and 8–10 (rebuild) live in
+/// <c>ShellViewModel</c> because the callback host + registry + log are owned there.
 /// </para>
 /// </summary>
 internal sealed class AdapterScope : IAsyncDisposable
@@ -37,12 +46,19 @@ internal sealed class AdapterScope : IAsyncDisposable
     /// <summary>The adapter-level cancellation token (Decision 7), linked to the app token.</summary>
     public CancellationToken AdapterToken => _adapterCts.Token;
 
+    /// <summary>
+    /// The scope-owned transport's datagram reader (A23). <c>DiscoveryService</c> reads
+    /// THIS reader (passed via <c>StartAsync</c>/<c>RebindAsync</c>) — never a separately
+    /// DI-resolved transport. Throws if accessed before the transport <see cref="StartAsync"/>.
+    /// </summary>
+    public ChannelReader<SsdpDatagram> IncomingDatagrams => _transport.IncomingDatagrams;
+
     public AdapterScope(
         INetworkAdapterEnumerator enumerator,
-        ISsdpTransport transport,
+        Func<ISsdpTransport> transportFactory,
         IDiagnosticEmitter diag,
         CancellationToken appToken)
-        : this(enumerator, transport, diag, DefaultSwitchBudget, appToken)
+        : this(enumerator, transportFactory, diag, DefaultSwitchBudget, appToken)
     {
     }
 
@@ -52,13 +68,15 @@ internal sealed class AdapterScope : IAsyncDisposable
     /// </summary>
     internal AdapterScope(
         INetworkAdapterEnumerator enumerator,
-        ISsdpTransport transport,
+        Func<ISsdpTransport> transportFactory,
         IDiagnosticEmitter diag,
         TimeSpan switchBudget,
         CancellationToken appToken)
     {
+        ArgumentNullException.ThrowIfNull(transportFactory);
         _enumerator = enumerator;
-        _transport = transport;
+        // A23: construct + OWN the transport here (one per scope, disposed on teardown).
+        _transport = transportFactory();
         _diag = diag;
         _switchBudget = switchBudget;
         // Decision 7: the adapter level is linked to the app level.
@@ -66,21 +84,32 @@ internal sealed class AdapterScope : IAsyncDisposable
     }
 
     /// <summary>
-    /// Selects the launch-default adapter (FR-048), binds the transport, and issues
-    /// the startup M-SEARCH (FR-004). Never throws on the zero-adapter path — the
-    /// host still runs (NFR-R5).
+    /// Binds the chosen adapter (FR-048) and issues the startup M-SEARCH (FR-004). When
+    /// <paramref name="preferred"/> is <c>null</c> the launch default (the first eligible
+    /// adapter) is selected; when supplied (the Story 5.2 switch) that adapter is bound.
+    /// Never throws on the zero-adapter path — the host still runs (NFR-R5).
     /// </summary>
-    public async Task StartAsync()
+    public async Task StartAsync(NetworkAdapter? preferred = null)
     {
-        var adapters = _enumerator.Enumerate();
-        if (adapters.Count == 0)
+        NetworkAdapter? selected;
+        if (preferred is not null)
         {
-            // NFR-R5 + FR-048: zero-adapter host still runs. No crash, no dialog.
-            _diag.Warning(DiagCategories.AdapterSwitch, "no eligible adapters at startup");
-            return;
+            // Story 5.2 switch: bind the operator-chosen adapter directly (no re-enumeration
+            // needed — the menu already enumerated; the chosen record carries the IPv4).
+            selected = preferred;
         }
+        else
+        {
+            var adapters = _enumerator.Enumerate();
+            if (adapters.Count == 0)
+            {
+                // NFR-R5 + FR-048: zero-adapter host still runs. No crash, no dialog.
+                _diag.Warning(DiagCategories.AdapterSwitch, "no eligible adapters at startup");
+                return;
+            }
 
-        var selected = adapters[0]; // FR-048: launch default = first eligible
+            selected = adapters[0]; // FR-048: launch default = first eligible
+        }
 
         await _transport.StartAsync(selected.IPv4, _adapterCts.Token).ConfigureAwait(false);
         // Set after bind succeeds — non-null CurrentAdapterIPv4 implies a live transport.
@@ -91,8 +120,9 @@ internal sealed class AdapterScope : IAsyncDisposable
 
     /// <summary>
     /// Cancels the adapter scope and tears down the transport within the FR-050 2 s
-    /// budget. Idempotent. Scaffold for the Story 5.2 atomic switch — the full
-    /// sequence (callback host, registry) plugs in there.
+    /// budget (Decision 7 steps 1 / 2 / 7). Idempotent. The rest of the atomic switch
+    /// (callback host, registry/log clear, rebuild) is orchestrated by
+    /// <c>ShellViewModel.SwitchAdapterAsync</c> around this dispose.
     /// </summary>
     public async ValueTask DisposeAsync()
     {
@@ -126,6 +156,12 @@ internal sealed class AdapterScope : IAsyncDisposable
                 // Teardown races are tolerated (same precedent as SsdpTransport.DisposeAsync).
                 _diag.Warning(DiagCategories.AdapterSwitch, "adapter teardown error");
             }
+        }
+        else
+        {
+            // Even an unstarted transport must be disposed (the factory always constructs one).
+            try { await _transport.DisposeAsync().ConfigureAwait(false); }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { /* nothing bound — tolerated */ }
         }
 
         _adapterCts.Dispose();

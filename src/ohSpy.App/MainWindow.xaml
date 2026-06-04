@@ -17,6 +17,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -26,8 +27,22 @@
             </TitleBar.IconSource>
         </TitleBar>
 
+        <!-- Story 5.2: the View menu (5.2 CREATES the app menu). The Network adapter submenu is populated
+             on the MenuFlyout's Opening (the adapter list is runtime-variable, so the static x:Bind
+             context-menu pattern from 2.8 won't serve; MenuFlyoutSubItem itself exposes no Opening event,
+             so the rebuild hooks the parent MenuFlyout's Opening — open-Q #4: a title-bar command button +
+             MenuFlyout, the cleaner WinUI-native fit). Story 5.1 (Diagnostics) and 5.3 (Rescan) will hang
+             their items off this same View flyout when they land (they run later in Epic 5). -->
+        <Button Grid.Row="1" Content="View" Margin="8,2" Padding="12,4">
+            <Button.Flyout>
+                <MenuFlyout Placement="BottomEdgeAlignedLeft" Opening="OnViewMenuOpening">
+                    <MenuFlyoutSubItem x:Name="NetworkAdapterMenu" Text="Network adapter" />
+                </MenuFlyout>
+            </Button.Flyout>
+        </Button>
+
         <!-- FR-001: Two-pane shell. Left: device tree. Right: SSDP log (Story 2.7 fills it). -->
-        <Grid Grid.Row="1">
+        <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="300" MinWidth="200" />
                 <ColumnDefinition Width="*" />

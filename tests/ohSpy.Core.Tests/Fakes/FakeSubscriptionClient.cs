@@ -39,7 +39,11 @@ internal sealed class FakeSubscriptionClient : ISubscriptionClient
 
     public CancellationToken AdapterContext { get; private set; }
 
+    public IEventCallbackHost? CallbackHost { get; private set; }
+
     public void SetAdapterContext(CancellationToken adapterToken) => AdapterContext = adapterToken;
+
+    public void SetCallbackHost(IEventCallbackHost callbackHost) => CallbackHost = callbackHost;
 
     public async Task<SubscriptionHandle> SubscribeAsync(
         ServiceDescription service, RegistryEntry parentEntry, CancellationToken popupToken)

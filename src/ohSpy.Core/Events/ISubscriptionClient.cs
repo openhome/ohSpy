@@ -28,6 +28,16 @@ public interface ISubscriptionClient
     void SetAdapterContext(CancellationToken adapterToken);
 
     /// <summary>
+    /// Binds the singleton client to the LIVE <see cref="IEventCallbackHost"/> (A23 / Story 5.2). The
+    /// host is no longer DI-injected at construction because the atomic adapter switch disposes the old
+    /// host and builds a fresh one (the host cannot re-start after dispose). Called from
+    /// <c>ShellViewModel.RunStartAsync</c> after <c>IEventCallbackHost.StartAsync</c>, and again on every
+    /// switch with the new host — the client re-points its <c>CallbackBaseUrl</c> reads + re-subscribes
+    /// the inbound NOTIFY handler to the new host.
+    /// </summary>
+    void SetCallbackHost(IEventCallbackHost callbackHost);
+
+    /// <summary>
     /// SUBSCRIBE to <paramref name="service"/> on <paramref name="parentEntry"/> and start the
     /// lifecycle (auto-renew + SID routing). On success returns a live <see cref="SubscriptionHandle"/>.
     /// On a failed SUBSCRIBE the thrown <c>UpnpException</c> propagates and NO subscription is created

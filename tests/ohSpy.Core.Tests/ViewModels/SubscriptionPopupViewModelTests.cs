@@ -468,6 +468,7 @@ public sealed class SubscriptionPopupViewModelTests
         private readonly SubscriptionHandle _handle;
         public HandReturningClient(SubscriptionHandle handle) => _handle = handle;
         public void SetAdapterContext(CancellationToken adapterToken) { }
+        public void SetCallbackHost(IEventCallbackHost callbackHost) { }
         public Task<SubscriptionHandle> SubscribeAsync(
             ServiceDescription service, RegistryEntry parentEntry, CancellationToken popupToken) =>
             Task.FromResult(_handle);

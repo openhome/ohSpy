@@ -65,8 +65,19 @@ internal sealed class SubscriptionClient : ISubscriptionClient
     }
 
     private readonly IUpnpHttpClient _http;
-    private readonly IEventCallbackHost _callbackHost;
     private readonly IDiagnosticEmitter _diag;
+
+    // A23 / Story 5.2: the callback host is no longer a DI singleton injected at construction —
+    // the atomic adapter switch disposes the old host and constructs a fresh one (the host cannot
+    // re-start after dispose). ShellViewModel hands the LIVE host to SetCallbackHost on startup AND
+    // on every switch; we (re-)subscribe NotifyReceived to whichever host is current. Reads of
+    // CallbackBaseUrl go through the current host.
+    // THREADING: single-writer — SetCallbackHost is only called from ShellViewModel.RunStartAsync
+    // (startup, single-threaded) and SwitchAdapterAsync (serialised by the _switching guard), never
+    // concurrently. The read side (the CallbackHost getter, on a popup's off-thread SubscribeAsync)
+    // could race a switch's write, so the field is `volatile` — a stale-but-valid host reference is
+    // the worst case (the popup's adapter-linked token cancels the doomed subscribe anyway).
+    private volatile IEventCallbackHost? _callbackHost;
 
     // The injectable delay seam (Open Q2 / AC-4.2.16) — defaults to Task.Delay so the renew loop is
     // testable WITHOUT real waits (mirrors EventCallbackHost's internal-test-ctor budget seam).
@@ -82,10 +93,9 @@ internal sealed class SubscriptionClient : ISubscriptionClient
     private readonly ConcurrentDictionary<Guid, Subscription> _pending = new();
 
     private CancellationToken _adapterToken = CancellationToken.None;
-    private int _subscribedToHost;
 
-    public SubscriptionClient(IUpnpHttpClient http, IEventCallbackHost callbackHost, IDiagnosticEmitter diag)
-        : this(http, callbackHost, diag, static (d, ct) => Task.Delay(d, ct))
+    public SubscriptionClient(IUpnpHttpClient http, IDiagnosticEmitter diag)
+        : this(http, diag, static (d, ct) => Task.Delay(d, ct))
     {
     }
 
@@ -93,27 +103,46 @@ internal sealed class SubscriptionClient : ISubscriptionClient
     /// (AC-4.2.16 — the EventCallbackHost internal-test-ctor precedent).</summary>
     internal SubscriptionClient(
         IUpnpHttpClient http,
-        IEventCallbackHost callbackHost,
         IDiagnosticEmitter diag,
         Func<TimeSpan, CancellationToken, Task> delay)
     {
         ArgumentNullException.ThrowIfNull(http);
-        ArgumentNullException.ThrowIfNull(callbackHost);
         ArgumentNullException.ThrowIfNull(diag);
         ArgumentNullException.ThrowIfNull(delay);
         _http = http;
-        _callbackHost = callbackHost;
         _diag = diag;
         _delay = delay;
+    }
 
-        // Subscribe ONCE to the host for the client's lifetime (one host, one client).
-        if (Interlocked.Exchange(ref _subscribedToHost, 1) == 0)
+    /// <summary>
+    /// A23 / Story 5.2: bind the client to the LIVE callback host. Called by
+    /// <c>ShellViewModel.RunStartAsync</c> right after <c>IEventCallbackHost.StartAsync</c>, and AGAIN
+    /// on every adapter switch with the freshly-constructed host. Detaches <see cref="NotifyReceived"/>
+    /// from the previous (now-disposed) host and attaches to the new one. Idempotent for the same host.
+    /// </summary>
+    public void SetCallbackHost(IEventCallbackHost callbackHost)
+    {
+        ArgumentNullException.ThrowIfNull(callbackHost);
+        if (ReferenceEquals(_callbackHost, callbackHost))
         {
-            _callbackHost.NotifyReceived += OnNotifyReceivedAsync;
+            return; // same host — already subscribed
         }
+
+        if (_callbackHost is not null)
+        {
+            _callbackHost.NotifyReceived -= OnNotifyReceivedAsync;
+        }
+
+        _callbackHost = callbackHost;
+        _callbackHost.NotifyReceived += OnNotifyReceivedAsync;
     }
 
     public void SetAdapterContext(CancellationToken adapterToken) => _adapterToken = adapterToken;
+
+    // The current callback host (set by SetCallbackHost). A SUBSCRIBE before the host is bound is a
+    // programming error (ShellViewModel binds it at startup before any popup can subscribe).
+    private IEventCallbackHost CallbackHost =>
+        _callbackHost ?? throw new InvalidOperationException("SetCallbackHost has not been called");
 
     public async Task<SubscriptionHandle> SubscribeAsync(
         ServiceDescription service, RegistryEntry parentEntry, CancellationToken popupToken)
@@ -144,7 +173,7 @@ internal sealed class SubscriptionClient : ISubscriptionClient
         SubscribeResponse response;
         try
         {
-            response = await _http.SubscribeAsync(eventSubUrl, _callbackHost.CallbackBaseUrl, InitialLease, popupToken)
+            response = await _http.SubscribeAsync(eventSubUrl, CallbackHost.CallbackBaseUrl, InitialLease, popupToken)
                                   .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is UpnpException)

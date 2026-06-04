@@ -23,6 +23,16 @@ public interface IDeviceRegistry
     /// <summary>Raised on the UI thread when a Loaded entry's display data changes (FR-054 trigger).</summary>
     event Action<RegistryEntry> DeviceUpdated;
 
-    /// <summary>Raised on the UI thread when an entry is removed (byebye / prune / mismatch).</summary>
+    /// <summary>Raised on the UI thread when an entry is removed (byebye / prune / mismatch / clear).</summary>
     event Action<Guid> DeviceRemoved;
+
+    /// <summary>
+    /// Removes EVERY entry (the Story 5.2 atomic adapter-switch reset, FR-050 step 6). Runs on the UI
+    /// thread: for each current UUID it cancels + disposes the entry's <c>DeviceCts</c> and raises
+    /// <see cref="DeviceRemoved"/> (the same <c>RemoveCore</c> cascade as byebye, so the tree drops rows
+    /// and open popups flip to their FR-037 device-gone banners), then empties the registry. Idempotent
+    /// and safe on an empty registry. The SSDP log clear is a SEPARATE call
+    /// (<c>SsdpLogViewModel.Clear()</c>, Story 2.7).
+    /// </summary>
+    void Clear();
 }

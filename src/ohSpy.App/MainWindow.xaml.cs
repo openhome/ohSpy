@@ -174,4 +174,42 @@ public sealed partial class MainWindow : Window
                 disableAnimation: true);
         }
     }
+
+    // ── Story 5.2: View → Network adapter menu — view mechanics only (Pattern 13 documented
+    //    exception, like the auto-follow + tree handlers). The adapter list is runtime-variable, so the
+    //    submenu is REBUILT each time the View flyout opens (AC-5.2.1). Business logic — enumeration,
+    //    the current-adapter check, and the atomic rebind — lives in ShellViewModel. ──
+    private void OnViewMenuOpening(object? sender, object e)
+    {
+        var items = NetworkAdapterMenu.Items;
+        items.Clear();
+
+        var adapters = ViewModel.EnumerateAdapters();
+        var switching = ViewModel.IsSwitching;
+
+        // AC-5.2.1: with zero or one eligible adapter there is nowhere to switch TO — show a single
+        // disabled hint, but the menu still opens.
+        if (adapters.Count <= 1)
+        {
+            items.Add(new MenuFlyoutItem { Text = "No other adapters available", IsEnabled = false });
+            return;
+        }
+
+        foreach (var adapter in adapters)
+        {
+            var item = new RadioMenuFlyoutItem
+            {
+                Text = $"{adapter.Name}  ({adapter.IPv4.ToString()})",
+                GroupName = "NetworkAdapter", // mutually exclusive (AC-5.2.1)
+                IsChecked = ViewModel.IsCurrentAdapter(adapter),
+                IsEnabled = !switching,        // AC-5.2.9: disabled while a switch is in flight
+            };
+
+            // Fire-and-forget the switch (the launcher/command precedent); SwitchAdapterAsync handles its
+            // own exceptions + the same-adapter no-op + the re-entrancy guard internally.
+            var chosen = adapter;
+            item.Click += (_, _) => _ = ViewModel.SwitchAdapterAsync(chosen);
+            items.Add(item);
+        }
+    }
 }

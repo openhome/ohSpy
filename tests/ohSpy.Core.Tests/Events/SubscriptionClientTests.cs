@@ -58,8 +58,9 @@ public sealed class SubscriptionClientTests
         var host = new FakeEventCallbackHost();
         var diag = new CapturingDiagnosticEmitter();
         var client = delay is null
-            ? new SubscriptionClient(http, host, diag)
-            : new SubscriptionClient(http, host, diag, delay);
+            ? new SubscriptionClient(http, diag)
+            : new SubscriptionClient(http, diag, delay);
+        client.SetCallbackHost(host); // A23: host bound post-construction (ShellViewModel precedent)
         client.SetAdapterContext(adapterToken);
         return new Harness(client, http, host, diag);
     }

@@ -21,7 +21,7 @@ public sealed class DiscoveryServiceTests
         var transport = new ChannelSsdpTransport();
         var registry = new DeviceRegistry(ui);
         var parser = new SsdpParser(cap);
-        var service = new DiscoveryService(transport, registry, parser, ui);
+        var service = new DiscoveryService(registry, parser, ui);
         return (service, transport, registry, cap);
     }
 
@@ -40,7 +40,7 @@ public sealed class DiscoveryServiceTests
         var fetchFired = 0;
         registry.EntryNeedsFetch += _ => fetchFired++;
 
-        await service.StartAsync(CancellationToken.None, CancellationToken.None);
+        await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
         await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootUuid));
         await DrainAsync(service, transport);
 
@@ -54,7 +54,7 @@ public sealed class DiscoveryServiceTests
     {
         var (service, transport, registry, _) = MakeSystem();
 
-        await service.StartAsync(CancellationToken.None, CancellationToken.None);
+        await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
         await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootUuid));
         transport.Complete();
         await service.DisposeAsync();
@@ -64,9 +64,9 @@ public sealed class DiscoveryServiceTests
         var cap2 = new CapturingDiagnosticEmitter();
         var ui2 = new InlineUiDispatcher();
         var parser2 = new SsdpParser(cap2);
-        var service2 = new DiscoveryService(transport2, registry, parser2, ui2);
+        var service2 = new DiscoveryService(registry, parser2, ui2);
 
-        await service2.StartAsync(CancellationToken.None, CancellationToken.None);
+        await service2.StartAsync(transport2.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
         await transport2.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootUuid));
         await DrainAsync(service2, transport2);
 
@@ -83,7 +83,7 @@ public sealed class DiscoveryServiceTests
         Guid? removedUuid = null;
         registry.DeviceRemoved += id => removedUuid = id;
 
-        await service.StartAsync(CancellationToken.None, CancellationToken.None);
+        await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
         await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootUuid));
         await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:byebye", RootUuid));
         await DrainAsync(service, transport);
@@ -98,7 +98,7 @@ public sealed class DiscoveryServiceTests
     {
         var (service, transport, registry, _) = MakeSystem();
 
-        await service.StartAsync(CancellationToken.None, CancellationToken.None);
+        await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
         await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:byebye", AnotherUuid));
         await DrainAsync(service, transport);
 
@@ -113,7 +113,7 @@ public sealed class DiscoveryServiceTests
         var announced = 0;
         service.AnnouncementReceived += _ => announced++;
 
-        await service.StartAsync(CancellationToken.None, CancellationToken.None);
+        await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
         await transport.WriteAsync(SsdpDatagramBuilder.Notify(
             "urn:schemas-upnp-org:device:MediaRenderer:1", "ssdp:alive", RootUuid));
         await DrainAsync(service, transport);
@@ -128,7 +128,7 @@ public sealed class DiscoveryServiceTests
     {
         var (service, transport, registry, _) = MakeSystem();
 
-        await service.StartAsync(CancellationToken.None, CancellationToken.None);
+        await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
         await transport.WriteAsync(SsdpDatagramBuilder.SearchResponse(RootUuid));
         await DrainAsync(service, transport);
 
@@ -143,7 +143,7 @@ public sealed class DiscoveryServiceTests
         var announced = 0;
         service.AnnouncementReceived += _ => announced++;
 
-        await service.StartAsync(CancellationToken.None, CancellationToken.None);
+        await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
         await transport.WriteAsync(SsdpDatagramBuilder.Malformed());
         await DrainAsync(service, transport);
 
@@ -160,7 +160,7 @@ public sealed class DiscoveryServiceTests
         var (service, transport, _registry, _) = MakeSystem();
         using var cts = new CancellationTokenSource();
 
-        await service.StartAsync(cts.Token, CancellationToken.None);
+        await service.StartAsync(transport.IncomingDatagrams, cts.Token, CancellationToken.None);
         await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootUuid));
         await cts.CancelAsync();
 
@@ -177,7 +177,7 @@ public sealed class DiscoveryServiceTests
         var announcements = new List<SsdpAnnouncement>();
         service.AnnouncementReceived += a => announcements.Add(a);
 
-        await service.StartAsync(CancellationToken.None, CancellationToken.None);
+        await service.StartAsync(transport.IncomingDatagrams, CancellationToken.None, CancellationToken.None);
         // root alive
         await transport.WriteAsync(SsdpDatagramBuilder.Notify("upnp:rootdevice", "ssdp:alive", RootUuid));
         // embedded alive

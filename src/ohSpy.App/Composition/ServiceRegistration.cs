@@ -67,26 +67,38 @@ internal static class ServiceRegistration
         services.AddSingleton<IScpdParser, XmlReaderScpdParser>();
         services.AddSingleton<IDeviceDescriptionParser, DeviceDescriptionParser>();
 
-        // Story 2.1 — SSDP transport (Decision 2). Singleton: the type is resolvable, but
-        // its lifecycle (StartAsync / DisposeAsync per adapter) is owned by AdapterScope
-        // (Story 2.2). No consumer wires it until DiscoveryService (Story 2.4).
-        services.AddSingleton<ISsdpTransport, SsdpTransport>();
+        // Story 2.1 — SSDP transport (Decision 2). Amendment A23 (Story 5.2): registered as a
+        // Func<ISsdpTransport> FACTORY, not a singleton — the atomic adapter switch must dispose the
+        // old transport and construct a fresh one bound to the new adapter (a disposed singleton can
+        // never re-bind: StartAsync's double-start guard + sockets/fields are not reset). AdapterScope
+        // OWNS the transport it constructs via this factory and exposes its IncomingDatagrams reader so
+        // DiscoveryService reads the scope-owned instance. Func<> (not a bespoke ISsdpTransportFactory)
+        // matches the project's existing Pattern-7 Func<> factories (the 2.9/3.2/4.3 popup-VM factories).
+        services.AddSingleton<Func<ISsdpTransport>>(sp =>
+            () => new SsdpTransport(sp.GetRequiredService<IDiagnosticEmitter>()));
 
         // Story 4.1 — GENA inbound callback host (Decision 4). The FIRST inbound listener: a raw
         // TcpListener bound to the selected adapter IP (NOT 0.0.0.0), so it runs unelevated with no
-        // URL ACL (FR-049). Registered as a singleton (ISsdpTransport precedent) whose lifecycle
-        // (StartAsync / DisposeAsync per adapter) is owned by ShellViewModel/AdapterScope — NOT
-        // auto-started by DI (the bound IP is not known at composition time). ShellViewModel.RunStartAsync
-        // starts it once scope.CurrentAdapterIPv4 is known; ShellViewModel.DisposeAsync drains it.
-        services.AddSingleton<IEventCallbackHost, EventCallbackHost>();
+        // URL ACL (FR-049). Amendment A23 (Story 5.2): registered as a Func<IEventCallbackHost> FACTORY
+        // (the ISsdpTransport precedent) — like the transport, the host CANNOT re-start after dispose
+        // (StartAsync double-start guard + _listener/_slots/_runCts/_callbackBaseUrl never reset), so
+        // the atomic switch disposes the old host and constructs a fresh one. ShellViewModel owns the
+        // LIVE host instance (constructs it on startup + on each switch), starts it once
+        // scope.CurrentAdapterIPv4 is known, hands it to ISubscriptionClient.SetCallbackHost, and drains
+        // it in DisposeAsync / before each rebuild.
+        services.AddSingleton<Func<IEventCallbackHost>>(sp =>
+            () => new EventCallbackHost(
+                sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<HttpTimeoutOptions>>(),
+                sp.GetRequiredService<IDiagnosticEmitter>()));
 
         // Story 4.2 — GENA subscription lifecycle orchestrator (the first consumer of the 4.1 host +
-        // the 1.3 GENA verbs). Singleton (IEventCallbackHost precedent): it subscribes ONCE to the
-        // host's NotifyReceived for its lifetime. The DI singleton cannot inject the per-AdapterScope
-        // token at construction, so ShellViewModel.RunStartAsync calls SetAdapterContext(scope.AdapterToken)
-        // right after _callbackHost.StartAsync (the level-above token for the D7 UNSUBSCRIBE-on-close +
-        // the adapter-switch lapse cascade). Story 5.2's atomic rebind must re-SetAdapterContext on the
-        // new adapter (the adapter-token cancel already cascades into every renew loop → AdapterSwitch lapse).
+        // the 1.3 GENA verbs). Singleton. A23 (Story 5.2): the callback host is NO LONGER ctor-injected
+        // (the host is now a per-adapter factory, disposed+rebuilt on switch) — ShellViewModel hands the
+        // LIVE host to SetCallbackHost on startup AND each switch, so the client re-subscribes
+        // NotifyReceived + re-points CallbackBaseUrl to the new host. ShellViewModel.RunStartAsync also
+        // calls SetAdapterContext(scope.AdapterToken) (the level-above token for the D7
+        // UNSUBSCRIBE-on-close + the adapter-switch lapse cascade); the switch re-SetAdapterContext on the
+        // new adapter (the old adapter-token cancel already cascades into every renew loop → AdapterSwitch lapse).
         services.AddSingleton<ISubscriptionClient, SubscriptionClient>();
 
         // Story 2.2 — Network adapter enumeration (FR-048). Singletons: stateless query

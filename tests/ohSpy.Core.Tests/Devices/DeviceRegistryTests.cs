@@ -146,6 +146,65 @@ public sealed class DeviceRegistryTests
         fetches.Should().HaveCount(2, "each new instance schedules a fresh fetch");
     }
 
+    // ─── Story 5.2: Clear() (the atomic adapter-switch reset, FR-050 step 6) ───────
+
+    [Fact]
+    [Trait("ac", "AC-5.2.3")]
+    public void Clear_RaisesDeviceRemovedPerUuid_DisposesEachCts_EmptiesRegistry()
+    {
+        var registry = NewRegistry();
+        var removed = new List<Guid>();
+        registry.DeviceRemoved += removed.Add;
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        var c = Guid.NewGuid();
+        Alive(registry, a);
+        Alive(registry, b);
+        Alive(registry, c);
+        registry.TryGetEntry(a, out var entryA);
+        registry.TryGetEntry(b, out var entryB);
+        registry.TryGetEntry(c, out var entryC);
+
+        registry.Clear();
+
+        registry.Count.Should().Be(0, "Clear() empties the registry");
+        removed.Should().BeEquivalentTo(new[] { a, b, c }, "one DeviceRemoved per UUID (byebye-identical cascade)");
+        entryA.DeviceToken.IsCancellationRequested.Should().BeTrue("each DeviceCts cancelled + disposed");
+        entryB.DeviceToken.IsCancellationRequested.Should().BeTrue();
+        entryC.DeviceToken.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
+    [Trait("ac", "AC-5.2.3")]
+    public void Clear_OnEmptyRegistry_IsNoOp()
+    {
+        var registry = NewRegistry();
+        var removed = new List<Guid>();
+        registry.DeviceRemoved += removed.Add;
+
+        registry.Clear();
+
+        removed.Should().BeEmpty();
+        registry.Count.Should().Be(0);
+    }
+
+    [Fact]
+    [Trait("ac", "AC-5.2.3")]
+    public void Clear_IsIdempotent()
+    {
+        var registry = NewRegistry();
+        var uuid = Guid.NewGuid();
+        Alive(registry, uuid);
+        var removed = new List<Guid>();
+        registry.DeviceRemoved += removed.Add;
+
+        registry.Clear();
+        registry.Clear(); // second call: nothing left to remove
+
+        removed.Should().ContainSingle().Which.Should().Be(uuid);
+        registry.Count.Should().Be(0);
+    }
+
     [Fact]
     public void RaiseDeviceUpdated_FiresEvent()
     {

@@ -23,7 +23,9 @@ public sealed class AdapterScopeTests
         FakeSsdpTransport transport,
         CapturingDiagnosticEmitter diag,
         CancellationToken appToken = default) =>
-        new(enumerator, transport, diag, appToken);
+        // A23: the scope constructs+owns its transport via a factory. The test pre-creates the fake so
+        // it can assert against it, then hands it back through a single-shot factory.
+        new(enumerator, () => transport, diag, appToken);
 
     [Fact]
     [Trait("ac", "AC-2.2.4")]
@@ -117,16 +119,19 @@ public sealed class AdapterScopeTests
 
     [Fact]
     [Trait("ac", "AC-2.2.8")]
-    public async Task DisposeAsync_TransportNeverStarted_DoesNotDisposeTransport_AC228()
+    public async Task DisposeAsync_TransportNeverStarted_StillDisposesOwnedTransport_AC228()
     {
+        // A23 ownership change: the scope CONSTRUCTS+OWNS its transport via the factory, so it must
+        // dispose it on teardown even when no adapter bound (else the constructed transport would leak).
+        // The unstarted SsdpTransport.DisposeAsync is idempotent + leak-free (null sockets).
         var transport = new FakeSsdpTransport();
         var diag = new CapturingDiagnosticEmitter();
-        var scope = Scope(EnumeratorWith(), transport, diag); // zero adapters ⇒ never started
+        var scope = Scope(EnumeratorWith(), transport, diag); // zero adapters ⇒ never bound
         await scope.StartAsync();
 
         await scope.DisposeAsync();
 
-        transport.DisposeCallCount.Should().Be(0);
+        transport.DisposeCallCount.Should().Be(1);
     }
 
     [Fact]
@@ -154,10 +159,10 @@ public sealed class AdapterScopeTests
         // Short budget via the test-only ctor so we don't wait the full 2 s.
         var scope = new AdapterScope(
             EnumeratorWith(StubNetworkInterfaceSource.Eligible("Ethernet0", "192.168.1.50")),
-            transport,
+            () => transport,
             diag,
-            appToken: default,
-            switchBudget: TimeSpan.FromMilliseconds(50));
+            switchBudget: TimeSpan.FromMilliseconds(50),
+            appToken: default);
         await scope.StartAsync();
 
         await scope.DisposeAsync();

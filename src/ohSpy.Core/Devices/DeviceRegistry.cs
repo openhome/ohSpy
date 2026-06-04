@@ -94,6 +94,25 @@ internal sealed class DeviceRegistry(IUiDispatcher ui) : IDeviceRegistry
         DeviceUpdated?.Invoke(entry);
     }
 
+    /// <summary>
+    /// Story 5.2 atomic adapter-switch reset (FR-050 step 6). Snapshots the current UUIDs FIRST, then
+    /// removes each via the shared <see cref="RemoveCore"/> cascade — so a <see cref="DeviceRemoved"/>
+    /// handler that re-reads the registry sees a consistent (shrinking) state and the removal semantics
+    /// match byebye exactly (the popups' FR-037 path). Idempotent; a no-op on an empty registry.
+    /// </summary>
+    public void Clear()
+    {
+        ui.AssertOnUiThread();
+
+        // Snapshot the keys before mutating so the per-UUID DeviceRemoved handlers (which may re-read
+        // the registry) observe a consistent state, and so we never iterate a collection we mutate.
+        var uuids = _entries.Keys.ToArray();
+        foreach (var uuid in uuids)
+        {
+            RemoveCore(uuid); // cancel + dispose DeviceCts + raise DeviceRemoved (byebye-identical)
+        }
+    }
+
     private void RemoveCore(Guid uuid)
     {
         if (_entries.TryRemove(uuid, out var entry))

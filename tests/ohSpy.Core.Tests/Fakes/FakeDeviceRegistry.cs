@@ -22,4 +22,8 @@ internal sealed class FakeDeviceRegistry : IDeviceRegistry
     public bool TryGetEntry(Guid uuid, out RegistryEntry entry) { entry = null!; return false; }
     public IReadOnlyCollection<RegistryEntry> Loaded => Array.Empty<RegistryEntry>();
     public int Count => 0;
+
+    // Story 5.2: inert Clear (this fake holds no entries). ClearCount lets a test assert it was invoked.
+    public int ClearCount { get; private set; }
+    public void Clear() => ClearCount++;
 }

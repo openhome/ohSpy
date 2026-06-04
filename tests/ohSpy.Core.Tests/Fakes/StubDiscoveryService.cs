@@ -1,6 +1,8 @@
 namespace ohSpy.Core.Tests.Fakes;
 
+using System.Threading.Channels;
 using ohSpy.Core.Discovery;
+using ohSpy.Core.Models;
 
 /// <summary>
 /// Controllable <see cref="IDiscoveryService"/> double for log-VM tests. The real service
@@ -14,7 +16,11 @@ internal sealed class StubDiscoveryService : IDiscoveryService
     /// <summary>Raise the event as the real service would (already on the UI thread).</summary>
     public void Raise(SsdpAnnouncement ann) => AnnouncementReceived?.Invoke(ann);
 
-    public Task StartAsync(CancellationToken adapterToken, CancellationToken ct) => Task.CompletedTask;
+    public Task StartAsync(ChannelReader<SsdpDatagram> reader, CancellationToken adapterToken, CancellationToken ct) =>
+        Task.CompletedTask;
+
+    public Task RebindAsync(ChannelReader<SsdpDatagram> reader, CancellationToken adapterToken, CancellationToken ct) =>
+        Task.CompletedTask;
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
