@@ -4,7 +4,12 @@ baseline_commit: 5e9d537a7daa0e9856aefd5de1bbabfc5df8fa85
 
 # Story 5.2: Adapter Switch — `View → Network adapter` Menu + Atomic Rebind
 
-Status: review
+Status: done
+<!-- 2026-06-04: KEYSTONE manual UI smoke (Task 6) PASSED on the live Linn/OpenHome network — adapter switch
+     (tree+log clear/refill, popups device-unreachable, <2s) plus the bundled deferred 4.3 event-stream +
+     3.2(5/6/7) + 3.3(2/3/5) all verified. Two smoke-found bugs fixed + committed en route: a55ed74
+     (device-tree "Loading…" stuck — WinUI TreeViewItem.ItemsSource snapshot) and 63e2378 (subscription-popup
+     crash — KeyValuePair struct binding → EventProperty/PropertyRows typed projection). review → done. Epic 4 CLOSED. -->;
 
 <!-- Re-sequenced (Epic 3 retro 2026-06-04): runs LAST in Epic 4 (after 4.3), not Epic 5. Key stays 5-2-… -->
 

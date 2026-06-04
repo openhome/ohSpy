@@ -1,5 +1,11 @@
 # Deferred Work
 
+## ✅ RESOLVED 2026-06-04 — deferred UI smokes run on the live Linn network (Story 5.2 keystone smoke)
+
+The Story 5.2 keystone smoke (live Linn/OpenHome network, multi-adapter) **cleared the whole deferred-smoke debt**: the **Story 4.3 event-stream smoke** (subscribe → live NOTIFY rows + latest-values + concurrent popups + lapse banner), the **Story 3.2 steps 5/6/7** (transport-error styling, device-gone banner, close-mid-invoke), and the **Story 3.3 numeric / off-step / loading** steps all PASSED. (Two App-side bugs were found + fixed en route: device-tree "Loading…" stuck `a55ed74`; subscription-popup NOTIFY-property render crash `63e2378`.) The `5.2` adapter switch superseded the retro Action-I `OHSPY_ADAPTER` override (not built). The individual entries below for those smokes are now historical.
+
+
+
 ## Deferred from: code review of 5-2-adapter-switch-view-network-adapter-menu-atomic-rebind (2026-06-04)
 
 - **W1 — Narrow use-after-clear race: `ui.Post(registry.OnAlive)` from old read loop can land after `registry.Clear()`** [`src/ohSpy.Core/ViewModels/ShellViewModel.cs:262-273`] — `DrainInFlightFetchesAsync` yields 3 times before `registry.Clear()`. If a `ReadLoopAsync` continuation from the old transport's channel posts an `OnAlive` that lands on the UI queue AFTER `Clear()` runs, a stale device re-appears with a cancelled `DeviceCts`. Fix requires an aggregate fetch-task join handle (open-Q #3, architecture); window is extremely narrow because the old channel writer completes before the settle yields run.
