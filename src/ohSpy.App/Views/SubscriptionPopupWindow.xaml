@@ -136,16 +136,16 @@
                                             Foreground="{StaticResource MutedForegroundBrush}"
                                             Text="{x:Bind Seq}" />
                                     </StackPanel>
-                                    <ItemsControl ItemsSource="{x:Bind Properties}">
+                                    <ItemsControl ItemsSource="{x:Bind PropertyRows}">
                                         <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
+                                            <DataTemplate x:DataType="models:EventProperty">
                                                 <Grid Margin="0,1" ColumnSpacing="8">
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="220" />
                                                         <ColumnDefinition Width="*" />
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Grid.Column="0" Text="{Binding Key}" TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource MutedForegroundBrush}" VerticalAlignment="Top" />
-                                                    <TextBlock Grid.Column="1" Text="{Binding Value}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FontSize="12" />
+                                                    <TextBlock Grid.Column="0" Text="{x:Bind Name}" TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource MutedForegroundBrush}" VerticalAlignment="Top" />
+                                                    <TextBlock Grid.Column="1" Text="{x:Bind Value}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FontSize="12" />
                                                 </Grid>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
