@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using ohSpy.Core.Devices;
 using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Discovery;
+using ohSpy.Core.Events;
 using ohSpy.Core.Threading;
 
 public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
@@ -11,6 +12,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
     private readonly INetworkAdapterEnumerator _adapterEnum;
     private readonly ISsdpTransport _transport;
     private readonly IDiscoveryService _discovery;
+    private readonly IEventCallbackHost _callbackHost;
     private readonly IDiagnosticEmitter _diag;
 
     private AdapterScope? _adapterScope;
@@ -27,15 +29,17 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
         INetworkAdapterEnumerator adapterEnum,
         ISsdpTransport transport,
         IDiscoveryService discovery,
+        IEventCallbackHost callbackHost,
         IDeviceRegistry registry,
         IUiDispatcher ui,
         IDiagnosticEmitter diag,
         NodeServices nodeServices)
     {
-        _adapterEnum = adapterEnum;
-        _transport   = transport;
-        _discovery   = discovery;
-        _diag        = diag;
+        _adapterEnum  = adapterEnum;
+        _transport    = transport;
+        _discovery    = discovery;
+        _callbackHost = callbackHost;
+        _diag         = diag;
         _deviceTree  = new DeviceTreeViewModel(registry, ui, nodeServices);
         _ssdpLog     = new SsdpLogViewModel(discovery, ui); // subscribes to AnnouncementReceived
     }
@@ -64,6 +68,13 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
             await scope.StartAsync().ConfigureAwait(false);
             if (scope.CurrentAdapterIPv4 is not null)
             {
+                // Story 4.1 — start the GENA callback host on the bound adapter IP (the first point
+                // the IP is known), bounded by the adapter token, before discovery. It binds a
+                // TcpListener on (adapterIPv4, ephemeral) — NOT 0.0.0.0 — so SUBSCRIBE (Story 4.2)
+                // can announce CallbackBaseUrl. Lifecycle is owned here (disposed in DisposeAsync).
+                await _callbackHost.StartAsync(scope.CurrentAdapterIPv4, scope.AdapterToken)
+                                   .ConfigureAwait(false);
+
                 await _discovery.StartAsync(scope.AdapterToken, scope.AdapterToken)
                                 .ConfigureAwait(false);
             }
@@ -89,6 +100,11 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
 
         if (_adapterScope is not null)
             await _adapterScope.DisposeAsync().ConfigureAwait(false);
+
+        // Story 4.1 — drain the callback host (budgeted, idempotent). The adapter-token cancel above
+        // has already unblocked its accept loop + in-flight reads; DisposeAsync drains within 2 s.
+        // Started only when CurrentAdapterIPv4 was non-null; DisposeAsync is a safe no-op otherwise.
+        await _callbackHost.DisposeAsync().ConfigureAwait(false);
 
         // Drain the discovery read loop (its IAsyncDisposable awaits the loop's exit, which
         // the adapter-token cancellation above has already triggered). ShellViewModel started

@@ -6,6 +6,7 @@ using ohSpy.App.Windowing;
 using ohSpy.Core.Devices;
 using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Discovery;
+using ohSpy.Core.Events;
 using ohSpy.Core.Http;
 using ohSpy.Core.Scpd;
 using ohSpy.Core.Shell;
@@ -70,6 +71,14 @@ internal static class ServiceRegistration
         // its lifecycle (StartAsync / DisposeAsync per adapter) is owned by AdapterScope
         // (Story 2.2). No consumer wires it until DiscoveryService (Story 2.4).
         services.AddSingleton<ISsdpTransport, SsdpTransport>();
+
+        // Story 4.1 — GENA inbound callback host (Decision 4). The FIRST inbound listener: a raw
+        // TcpListener bound to the selected adapter IP (NOT 0.0.0.0), so it runs unelevated with no
+        // URL ACL (FR-049). Registered as a singleton (ISsdpTransport precedent) whose lifecycle
+        // (StartAsync / DisposeAsync per adapter) is owned by ShellViewModel/AdapterScope — NOT
+        // auto-started by DI (the bound IP is not known at composition time). ShellViewModel.RunStartAsync
+        // starts it once scope.CurrentAdapterIPv4 is known; ShellViewModel.DisposeAsync drains it.
+        services.AddSingleton<IEventCallbackHost, EventCallbackHost>();
 
         // Story 2.2 — Network adapter enumeration (FR-048). Singletons: stateless query
         // services. AdapterScope is NOT registered here — it is constructed by the
