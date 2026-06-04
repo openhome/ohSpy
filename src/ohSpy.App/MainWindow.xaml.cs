@@ -91,6 +91,20 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    // After a node's lazy build replaces its Children (placeholder → services / actions), the
+    // TreeViewItem keeps the ItemsSource it snapshotted when the container first realized — often the
+    // placeholder-only collection (AssignContainerSources assigns once, and whether that lands before
+    // or after the build is a layout-timing race). Force the displayed container to re-read the live
+    // children: null-then-reassign drops the stale snapshot so WinUI re-binds to the rebuilt collection.
+    private void RebindChildren(object node, ObservableCollection<INodeViewModel> children)
+    {
+        if (DeviceTreeView.ContainerFromItem(node) is TreeViewItem container)
+        {
+            container.ItemsSource = null;
+            container.ItemsSource = children;
+        }
+    }
+
     // ── Tree lazy-load + expand discoverability — view mechanics only, no business logic
     //    (Pattern 13 documented exception, like the auto-follow handlers above). The Story 2.6
     //    lazy load (build service list / fetch SCPD) hangs off the node VM's IsExpanded, which
@@ -105,10 +119,18 @@ public sealed partial class MainWindow : Window
         switch (args.Item)
         {
             case DeviceNodeViewModel dev when !dev.IsExpanded:
-                DispatcherQueue.TryEnqueue(() => dev.IsExpanded = true);
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    dev.IsExpanded = true; // synchronous: builds the service list into dev.Children
+                    RebindChildren(dev, dev.Children);
+                });
                 break;
             case ServiceNodeViewModel svc when !svc.IsExpanded:
-                DispatcherQueue.TryEnqueue(() => svc.IsExpanded = true);
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    svc.IsExpanded = true;
+                    RebindChildren(svc, svc.Children);
+                });
                 break;
         }
     }
