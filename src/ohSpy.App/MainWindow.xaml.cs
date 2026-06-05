@@ -74,7 +74,16 @@ public sealed partial class MainWindow : Window
             var children = NodeChildren(node);
             if (children is null)
             {
-                continue; // leaf — no chevron / children
+                // Leaf (action) — no children, so no chevron. BUT WinUI recycles TreeViewItem
+                // containers: a container reused from a service row (which we gave an ItemsSource,
+                // hence a chevron) keeps that ItemsSource and shows a PHANTOM chevron on the action.
+                // Clear it so leaves render chevron-free. The set-branch below re-assigns if this same
+                // container is later recycled back to an expandable row.
+                if (DeviceTreeView.ContainerFromItem(node) is TreeViewItem leaf && leaf.ItemsSource is not null)
+                {
+                    leaf.ItemsSource = null;
+                }
+                continue;
             }
 
             // Only realized containers are returned (collapsed subtrees yield null) — so this
@@ -148,6 +157,10 @@ public sealed partial class MainWindow : Window
         // null-DataContext-safe item lookup as the expand branch (WinUI TreeView quirk).
         if (item is ActionNodeViewModel act)
         {
+            // Open the invocation popup. The popup-behind-on-double-click race (the shell reclaims
+            // foreground after the second click's mouse-up, dropping the popup behind it post-A31) is
+            // handled in InvocationPopupLauncher, which re-asserts the popup on top at Low priority
+            // once the input event has unwound. A synchronous Activate alone loses that race.
             act.OpenInvocationPopupCommand.Execute(null);
             return;
         }

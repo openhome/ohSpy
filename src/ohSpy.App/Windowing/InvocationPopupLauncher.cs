@@ -1,5 +1,6 @@
 namespace ohSpy.App.Windowing;
 
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using ohSpy.App.Views;
 using ohSpy.Core.Devices;
@@ -42,6 +43,14 @@ internal sealed class InvocationPopupLauncher : IInvocationPopupLauncher
         window.Activate();                                   // (1) D10: MUST precede Adopt
         if (ShellWindow is not null)
             _ownership.Adopt(window, ShellWindow);           // (2) FR-046 ownership (AC-10.5)
+
+        // (2a) This popup is opened by DOUBLE-CLICKING an action row. The second click's mouse-up
+        // re-focuses the shell AFTER this synchronous Activate(), and post-A31 (popups float in free
+        // z-order, no owner link) that drops the just-opened popup behind the shell. Re-assert it on
+        // top at Low priority — which runs once the double-click input has fully unwound — so the
+        // popup ends up in front. (One-shot; it then floats freely per A31 — clicking the shell still
+        // brings it forward.) The other three popups open from single menu clicks and don't hit this.
+        window.DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, window.Activate);
 
         // (3) Story 3.3 async-init seam: fetch+parse the SCPD state table and upgrade the ctor's
         // text-only inputs into constrained variants (AC-3.3.1). Fire-and-forget — every exception

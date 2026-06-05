@@ -1,5 +1,12 @@
 # Deferred Work
 
+## Story 6.1 manual UI verification — 2 ACs deferred to a busier-network session (2026-06-05)
+
+The Story 6.1 walkthrough passed on the live Linn network, but two ACs could not be exercised on that LAN and are deferred (Project Lead to re-test on a busier/slower network):
+- **AC-6.1.4** — "Loading…" placeholder visibility (all devices loaded too fast to observe the placeholder).
+- **AC-6.1.14** — SSDP burst (≥ 20 adv/s for ≥ 30 s) → no dropped frames (not enough SSDP traffic on the test LAN).
+Both are observation-only re-tests; no code is pending. (Story 6.2 soak tests may also exercise the burst path.) Two polish defects found during the walkthrough were fixed + re-verified under 6.1 (D1 phantom chevron, D2 invocation-popup z-order) — not deferred.
+
 ## Deferred from: code review of 5-3-rescan-view-rescan-menu-prune-non-responders (2026-06-05)
 
 - **W1 — TOCTOU "MX wait completes just as switch fires": posted prune action can interleave with the switch's posted `registry.Clear()`** [`src/ohSpy.Core/ViewModels/ShellViewModel.cs:177-182`] — The `_ui.Post(() => { prune; ... })` from a just-completing rescan and the switch's `await _ui.PostAsync(() => { registry.Clear(); ... })` land on the same UI dispatcher queue; all orderings are architecturally safe (prune on already-cleared registry returns 0; `IsRescanning=false` still fires). Same pattern as the W1 deferred from the 5.2 switch review (use-after-clear for OnAlive). Resolution requires a tracked, awaitable rescan task that the switch can explicitly cancel-and-wait — out of scope for v1.
