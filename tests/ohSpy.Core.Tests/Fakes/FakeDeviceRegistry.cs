@@ -26,4 +26,7 @@ internal sealed class FakeDeviceRegistry : IDeviceRegistry
     // Story 5.2: inert Clear (this fake holds no entries). ClearCount lets a test assert it was invoked.
     public int ClearCount { get; private set; }
     public void Clear() => ClearCount++;
+
+    // Story 5.3: inert prune (this fake holds no entries). Returns 0 — nothing to prune.
+    public int PruneNotSeenSince(DateTime epochUtc) => 0;
 }

@@ -55,6 +55,33 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     private bool _isSwitching;
 
+    /// <summary>
+    /// True while a Story 5.3 rescan is in flight (AC-5.3.3 menu-disable / AC-5.3.4 "Rescanning…"
+    /// transient). Drives <see cref="RescanCommand"/>'s CanExecute so the bound View → Rescan
+    /// <c>MenuFlyoutItem</c> auto-disables, and the App may bind it to an inline spinner. Mutated only on
+    /// the UI thread (set synchronously pre-await at the top of the command; cleared via
+    /// <see cref="IUiDispatcher.Post"/> since the post-await continuation resumes off-thread).
+    /// </summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RescanCommand))]
+    private bool _isRescanning;
+
+    /// <summary>The default rescan M-SEARCH MX (FR-022) — parity with the startup search budget.</summary>
+    private static readonly TimeSpan RescanMx = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Grace added to the MX wait (Q3) so a device that responds right at the MX edge isn't pruned by a
+    /// routing-latency race (its alive must land + route through <c>_ui.Post</c> before the prune snapshot).
+    /// </summary>
+    private static readonly TimeSpan RescanGrace = TimeSpan.FromMilliseconds(500);
+
+    // The MX-wait delay seam (the SubscriptionClient._delay precedent). Real Task.Delay in production;
+    // a test swaps it (SetRescanDelayForTest) so the MX window is instant/controllable — no real 5 s sleep.
+    private Func<TimeSpan, CancellationToken, Task> _rescanDelay = (d, ct) => Task.Delay(d, ct);
+
+    /// <summary>Test seam (InternalsVisibleTo): replace the rescan MX-wait delay (no real 5 s sleep).</summary>
+    internal void SetRescanDelayForTest(Func<TimeSpan, CancellationToken, Task> delay) => _rescanDelay = delay;
+
     public ShellViewModel(
         INetworkAdapterEnumerator adapterEnum,
         Func<ISsdpTransport> transportFactory,
@@ -88,6 +115,89 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
     /// </summary>
     [RelayCommand]
     private void OpenDiagnostics() => _diagnosticsLauncher.Open();
+
+    /// <summary>
+    /// Story 5.3 (FR-021..FR-024): the View → Rescan action. Re-issues the M-SEARCH on the current
+    /// adapter via the scope-owned transport, waits MX (+ a small grace) WITHOUT suspending the live
+    /// unsolicited-NOTIFY listener (no socket teardown, no <c>DiscoveryService</c> suspension, no
+    /// registry/host/subscription teardown — this is NOT the 5.2 switch), then prunes every device not
+    /// seen since the pre-send epoch (responders + in-window alives refreshed their <c>LastSeenUtc</c> via
+    /// <c>OnAlive</c> and survive). Fire-and-forget from the menu (A26): the body handles its own
+    /// exceptions.
+    /// <para>
+    /// <b>Two guards, switch wins (AC-5.3.10):</b> rescan uses its OWN guard (<see cref="IsRescanning"/> /
+    /// CanExecute), SEPARATE from the <c>_switching</c> startup/switch guard — a switch is never blocked by
+    /// an in-flight rescan. A concurrent adapter switch cancels the shared <c>_adapterCts</c> (inside
+    /// <c>AdapterScope.DisposeAsync</c>); the MX wait is linked to that token, so the switch aborts the
+    /// rescan (OCE swallowed, Warning emitted, NO prune against the fresh post-switch registry). A rescan
+    /// fired mid-switch no-ops on the null-scope guard below.
+    /// </para>
+    /// <para>
+    /// <b>Marshalling (Action H / winui-no-synccontext-marshal-vm):</b> the body resumes off-thread after
+    /// the first <c>await</c>. <see cref="IsRescanning"/> is set <c>true</c> synchronously (the command
+    /// starts on the UI thread); the prune (which mutates the bound tree via <c>DeviceRemoved</c>) and the
+    /// <see cref="IsRescanning"/> clear are applied THROUGH <see cref="IUiDispatcher.Post"/>.
+    /// </para>
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanRescan))]
+    private async Task RescanAsync()
+    {
+        // Re-entrancy guard (AC-5.3.3). CanExecute already disables the menu item, but a programmatic
+        // second invocation is still a silent no-op (no overlapping rescans).
+        if (IsRescanning)
+        {
+            return;
+        }
+
+        // Zero-adapter / mid-switch no-op (AC-5.3.5 / NFR-R5): nothing to scan, and a mid-teardown scope
+        // must not be poked. Read the scope once.
+        var scope = _adapterScope;
+        if (scope is null || scope.CurrentAdapterIPv4 is null)
+        {
+            return;
+        }
+
+        // Transient state (AC-5.3.4). Pre-await → on the UI thread → safe direct set. The CanExecute
+        // change (NotifyCanExecuteChangedFor) disables the bound MenuFlyoutItem.
+        IsRescanning = true;
+        _diag.Information(DiagCategories.Rescan, "rescan started");
+
+        // Stamp the epoch BEFORE the send (AC-5.3.7). Responses arrive AFTER the send, so their arrival
+        // UTC ≥ epoch → LastSeenUtc ≥ epoch → they survive the prune.
+        var epochUtc = DateTime.UtcNow;
+        var token = scope.AdapterToken; // the scope-owned token a concurrent switch cancels (AC-5.3.10)
+
+        try
+        {
+            await scope.SendMSearchAsync(RescanMx).ConfigureAwait(false);
+            await _rescanDelay(RescanMx + RescanGrace, token).ConfigureAwait(false);
+
+            // Prune + completion diagnostic + transient clear, ALL marshalled together (Action H). Under a
+            // deferred dispatcher none of this applies until the UI thread drains (AC-5.3.12).
+            _ui.Post(() =>
+            {
+                var pruned = _registry.PruneNotSeenSince(epochUtc);
+                _diag.Information(DiagCategories.Rescan, $"rescan pruned {pruned} non-responders");
+                IsRescanning = false;
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // The adapter switch won the shared token (AC-5.3.10): abandon the rescan, do NOT prune against
+            // the fresh post-switch registry. The clear is marshalled (off-thread continuation).
+            _diag.Warning(DiagCategories.Rescan, "rescan abandoned — adapter switch in progress");
+            _ui.Post(() => IsRescanning = false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _diag.Warning(DiagCategories.Rescan, "rescan failed",
+                new DiagnosticContext { ErrorText = ex.Message });
+            _ui.Post(() => IsRescanning = false);
+        }
+    }
+
+    /// <summary>CanExecute for <see cref="RescanCommand"/> (AC-5.3.3): no overlapping rescans.</summary>
+    private bool CanRescan() => !IsRescanning;
 
     /// <summary>The currently-bound adapter IPv4 (null before startup / on the zero-adapter host).</summary>
     public System.Net.IPAddress? CurrentAdapterIPv4 => _adapterScope?.CurrentAdapterIPv4;

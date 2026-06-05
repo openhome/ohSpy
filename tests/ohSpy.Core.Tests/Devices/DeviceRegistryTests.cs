@@ -207,6 +207,95 @@ public sealed class DeviceRegistryTests
         registry.Count.Should().Be(0);
     }
 
+    // ─── Story 5.3: PruneNotSeenSince (the rescan prune, FR-023) ──────────────────
+
+    [Fact]
+    [Trait("ac", "AC-5.3.8")]
+    [Trait("fr", "FR-023")]
+    public void PruneNotSeenSince_RemovesOnlyEntriesNotSeenSinceEpoch_FR023()
+    {
+        var registry = NewRegistry();
+        var removed = new List<string>();
+        registry.DeviceRemoved += removed.Add;
+
+        // Two stale devices (seen before the epoch), two fresh (seen at/after the epoch).
+        var stale1 = NewUdn();
+        var stale2 = NewUdn();
+        registry.OnAlive(stale1, Location, DateTime.UtcNow.AddSeconds(-10), "S", null, null, null, CancellationToken.None);
+        registry.OnAlive(stale2, Location, DateTime.UtcNow.AddSeconds(-10), "S", null, null, null, CancellationToken.None);
+
+        var epoch = DateTime.UtcNow;
+
+        var fresh1 = NewUdn();
+        var fresh2 = NewUdn();
+        registry.OnAlive(fresh1, Location, epoch.AddSeconds(1), "S", null, null, null, CancellationToken.None);
+        registry.OnAlive(fresh2, Location, epoch.AddSeconds(1), "S", null, null, null, CancellationToken.None);
+        registry.TryGetEntry(stale1, out var staleEntry1);
+
+        var pruned = registry.PruneNotSeenSince(epoch);
+
+        pruned.Should().Be(2, "only the two entries with LastSeenUtc < epoch are pruned");
+        removed.Should().BeEquivalentTo(new[] { stale1, stale2 }, "one DeviceRemoved per pruned UDN");
+        staleEntry1.DeviceToken.IsCancellationRequested.Should().BeTrue("the pruned entry's DeviceCts is cancelled");
+        registry.Count.Should().Be(2, "the fresh entries survive");
+        registry.TryGetEntry(fresh1, out _).Should().BeTrue();
+        registry.TryGetEntry(fresh2, out _).Should().BeTrue();
+    }
+
+    [Fact]
+    [Trait("ac", "AC-5.3.8")]
+    [Trait("fr", "FR-023")]
+    public void PruneNotSeenSince_RefreshedEntrySurvives_FR023()
+    {
+        // A device seen before the epoch but refreshed AFTER it (a rescan response) must survive — the
+        // prune rides RefreshSsdpMetadata's LastSeenUtc update through OnAlive.
+        var registry = NewRegistry();
+        var udn = NewUdn();
+        registry.OnAlive(udn, Location, DateTime.UtcNow.AddSeconds(-10), "S", null, null, null, CancellationToken.None);
+
+        var epoch = DateTime.UtcNow;
+        registry.OnAlive(udn, Location, epoch.AddSeconds(1), "S", null, null, null, CancellationToken.None); // "responded"
+
+        var pruned = registry.PruneNotSeenSince(epoch);
+
+        pruned.Should().Be(0, "the refreshed (responded) entry has LastSeenUtc ≥ epoch");
+        registry.Count.Should().Be(1);
+    }
+
+    [Fact]
+    [Trait("ac", "AC-5.3.8")]
+    [Trait("fr", "FR-023")]
+    public void PruneNotSeenSince_EmptyRegistry_ReturnsZero_FR023()
+    {
+        var registry = NewRegistry();
+        var removed = new List<string>();
+        registry.DeviceRemoved += removed.Add;
+
+        registry.PruneNotSeenSince(DateTime.UtcNow).Should().Be(0);
+
+        removed.Should().BeEmpty();
+        registry.Count.Should().Be(0);
+    }
+
+    [Fact]
+    [Trait("ac", "AC-5.3.8")]
+    [Trait("fr", "FR-023")]
+    public void PruneNotSeenSince_IsIdempotent_FR023()
+    {
+        var registry = NewRegistry();
+        var udn = NewUdn();
+        registry.OnAlive(udn, Location, DateTime.UtcNow.AddSeconds(-10), "S", null, null, null, CancellationToken.None);
+        var removed = new List<string>();
+        registry.DeviceRemoved += removed.Add;
+        var epoch = DateTime.UtcNow;
+
+        registry.PruneNotSeenSince(epoch).Should().Be(1);
+        registry.PruneNotSeenSince(epoch).Should().Be(0, "second prune finds nothing — no double DeviceRemoved");
+
+        removed.Should().ContainSingle().Which.Should().Be(udn);
+        registry.Count.Should().Be(0);
+    }
+
     [Fact]
     public void RaiseDeviceUpdated_FiresEvent()
     {

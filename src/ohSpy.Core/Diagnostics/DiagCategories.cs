@@ -105,6 +105,17 @@ public static class DiagCategories
     /// <summary>Mandatory context: (none beyond message).</summary>
     public const string AdapterSwitchTimeout = "Adapter.Switch.Timeout";
 
+    // ─── Rescan (Story 5.3) ────────────────────────────────────────
+    /// <summary>
+    /// The Story 5.3 <c>View → Rescan</c> action (FR-021..FR-024): re-issue the M-SEARCH on the current
+    /// adapter and prune devices that did not respond. Distinct from <see cref="AdapterSwitch"/> (a
+    /// different operator action) so it reads + filters cleanly in the Diagnostics viewer. Emitted at
+    /// rescan start, at completion (the pruned count goes in the message), and on the abandoned-by-switch
+    /// path (Warning). Mandatory context: (none beyond message; ErrorText carries a failure reason when
+    /// the rescan errored).
+    /// </summary>
+    public const string Rescan = "Adapter.Rescan";
+
     // ─── Diagnostics infrastructure (Story 1.5 own use) ────────────
     /// <summary>Mandatory context: ErrorText. Emitted by DiagnosticFileSink on startup failure.</summary>
     public const string DiagnosticsFileSinkUnavailable = "Diagnostics.FileSink.Unavailable";

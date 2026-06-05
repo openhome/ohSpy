@@ -38,6 +38,9 @@
                 <MenuFlyout Placement="BottomEdgeAlignedLeft" Opening="OnViewMenuOpening">
                     <!-- Story 5.1: Diagnostics viewer (FR-041). Hangs off this EXISTING View flyout. -->
                     <MenuFlyoutItem Text="Diagnostics" Command="{x:Bind ViewModel.OpenDiagnosticsCommand}" />
+                    <!-- Story 5.3: Rescan (FR-021). Action item, grouped with Diagnostics. CanExecute
+                         (IsRescanning) auto-disables it while a rescan is in flight (AC-5.3.3). -->
+                    <MenuFlyoutItem Text="Rescan" Command="{x:Bind ViewModel.RescanCommand}" />
                     <MenuFlyoutSeparator />
                     <MenuFlyoutSubItem x:Name="NetworkAdapterMenu" Text="Network adapter" />
                 </MenuFlyout>

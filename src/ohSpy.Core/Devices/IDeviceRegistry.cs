@@ -35,4 +35,18 @@ public interface IDeviceRegistry
     /// (<c>SsdpLogViewModel.Clear()</c>, Story 2.7).
     /// </summary>
     void Clear();
+
+    /// <summary>
+    /// Story 5.3 rescan prune (FR-023). Removes every entry whose <see cref="RegistryEntry.LastSeenUtc"/>
+    /// is STRICTLY before <paramref name="epochUtc"/> — i.e. any device that neither responded to the
+    /// rescan M-SEARCH nor announced an unsolicited alive since the epoch was stamped. Runs on the UI
+    /// thread: like <see cref="Clear"/> it snapshots the current UDNs FIRST, then removes each stale one
+    /// via the shared byebye-identical cascade (cancel + dispose its <c>DeviceCts</c> and raise
+    /// <see cref="DeviceRemoved"/> per UDN, so the tree drops the row and open popups flip to their
+    /// FR-037 device-gone banners). Responders / in-window alives have refreshed <c>LastSeenUtc</c> (via
+    /// <c>OnAlive</c>) so they survive. A device already removed by a byebye during the window is simply
+    /// not found — the prune is idempotent (no double <see cref="DeviceRemoved"/>). Returns the number of
+    /// entries pruned. Safe (returns 0) on an empty registry.
+    /// </summary>
+    int PruneNotSeenSince(DateTime epochUtc);
 }

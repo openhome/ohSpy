@@ -1,5 +1,9 @@
 # Deferred Work
 
+## Deferred from: code review of 5-3-rescan-view-rescan-menu-prune-non-responders (2026-06-05)
+
+- **W1 — TOCTOU "MX wait completes just as switch fires": posted prune action can interleave with the switch's posted `registry.Clear()`** [`src/ohSpy.Core/ViewModels/ShellViewModel.cs:177-182`] — The `_ui.Post(() => { prune; ... })` from a just-completing rescan and the switch's `await _ui.PostAsync(() => { registry.Clear(); ... })` land on the same UI dispatcher queue; all orderings are architecturally safe (prune on already-cleared registry returns 0; `IsRescanning=false` still fires). Same pattern as the W1 deferred from the 5.2 switch review (use-after-clear for OnAlive). Resolution requires a tracked, awaitable rescan task that the switch can explicitly cancel-and-wait — out of scope for v1.
+
 ## Deferred from: code review of 5-1-diagnostics-viewer-window (2026-06-05)
 
 - **P3 — Redundant `Title = "Diagnostics"` in code-behind** [`src/ohSpy.App/Views/DiagnosticsWindow.xaml.cs:32`] — `DiagnosticsWindow.xaml` already sets `Title="Diagnostics"` declaratively; the code-behind redundantly sets it again in the constructor. Harmless double-set (last-writer wins, same value). Remove the code-behind line in a future XAML/code-behind clean-up pass.

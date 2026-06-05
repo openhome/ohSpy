@@ -58,6 +58,8 @@ public class DiagCategoriesTests
             "GenaNotifyReceived",
             // Adapter
             "AdapterSwitch", "AdapterSwitchTimeout",
+            // Rescan (Story 5.3)
+            "Rescan",
             // Diagnostics infrastructure
             "DiagnosticsFileSinkUnavailable",
             // XML viewing / shell-open (Story 2.8)

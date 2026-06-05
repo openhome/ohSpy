@@ -1029,6 +1029,7 @@ public static class DiagCategories
     public const string GenaNotifyReceived       = "Gena.Notify.Received";       // Verbose
     public const string AdapterSwitch            = "Adapter.Switch";
     public const string AdapterSwitchTimeout    = "Adapter.Switch.Timeout";
+    public const string Rescan                   = "Adapter.Rescan";              // Story 5.3
     public const string DiagnosticsFileSinkUnavailable = "Diagnostics.FileSink.Unavailable";
     // Extended as new error paths are added; one PR adds the constant + the call sites.
 }
@@ -1928,6 +1929,7 @@ Mandatory fields per category family (downstream agents follow this table; devia
 | `Ssdp.Parse` | `RemoteEndpoint` |
 | `Ssdp.Channel.*` | (none beyond message) |
 | `Adapter.Switch.*` | (none beyond message) |
+| `Adapter.Rescan` | (none beyond message; `ErrorText` on a rescan failure) |
 | `Diagnostics.FileSink.*` | (none beyond message) |
 
 These are documented as XML doc comments on each `DiagCategories` constant.

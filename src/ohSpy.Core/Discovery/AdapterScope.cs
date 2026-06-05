@@ -119,6 +119,36 @@ internal sealed class AdapterScope : IAsyncDisposable
     }
 
     /// <summary>
+    /// Story 5.3 rescan re-trigger (FR-022). Re-issues an M-SEARCH (<c>ST: upnp:rootdevice</c>, the
+    /// identical wire semantics as the startup search at <see cref="StartAsync"/>) on the bound adapter
+    /// via the SCOPE-OWNED transport, using the scope's own <c>_adapterCts</c> token — so a concurrent
+    /// adapter switch (which cancels that token in <see cref="DisposeAsync"/>) aborts an in-flight rescan
+    /// (AC-5.3.10 "switch wins"). A23 keeps the transport encapsulated here; the orchestration lives in
+    /// <c>ShellViewModel.RescanAsync</c>. Defensive no-op before a successful <see cref="StartAsync"/>
+    /// (the zero-adapter scope has no live transport).
+    /// </summary>
+    public Task SendMSearchAsync(TimeSpan mx)
+    {
+        if (!_transportStarted)
+        {
+            return Task.CompletedTask; // zero-adapter / not-yet-bound scope: nothing to scan (NFR-R5)
+        }
+
+        try
+        {
+            return _transport.SendMSearchAsync(mx, _adapterCts.Token);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Switch-wins race (AC-5.3.10): DisposeAsync cancelled THEN disposed _adapterCts between the
+            // caller's scope check and this token read, so `_adapterCts.Token` throws ODE. Surface it as
+            // cancellation — the caller's "rescan abandoned, switch in progress" path — not a generic
+            // failure (which would log a misleading "rescan failed" with an ODE message).
+            throw new OperationCanceledException("adapter scope disposed during rescan");
+        }
+    }
+
+    /// <summary>
     /// Cancels the adapter scope and tears down the transport within the FR-050 2 s
     /// budget (Decision 7 steps 1 / 2 / 7). Idempotent. The rest of the atomic switch
     /// (callback host, registry/log clear, rebuild) is orchestrated by

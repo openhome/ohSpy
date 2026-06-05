@@ -174,4 +174,27 @@ public sealed class AdapterScopeTests
         // outlive the test (prevents orphaned Task.Delay after the 50 ms budget fires).
         await transport.TeardownCts.CancelAsync();
     }
+
+    [Fact]
+    [Trait("ac", "AC-5.3.10")]
+    public async Task SendMSearchAsync_AfterDispose_ThrowsOperationCanceled_NotObjectDisposed()
+    {
+        var transport = new FakeSsdpTransport();
+        var diag = new CapturingDiagnosticEmitter();
+        var scope = new AdapterScope(
+            EnumeratorWith(StubNetworkInterfaceSource.Eligible("Ethernet0", "192.168.1.50")),
+            () => transport,
+            diag,
+            switchBudget: TimeSpan.FromMilliseconds(50),
+            appToken: default);
+        await scope.StartAsync();
+        await scope.DisposeAsync(); // cancels THEN disposes _adapterCts — its Token getter now throws ODE
+
+        // Switch-wins race (AC-5.3.10): a rescan that reads the disposed scope's token must see
+        // cancellation (the "abandoned — switch in progress" path), NOT a raw ObjectDisposedException
+        // that would log a misleading "rescan failed".
+        var act = async () => await scope.SendMSearchAsync(TimeSpan.FromSeconds(1));
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
 }

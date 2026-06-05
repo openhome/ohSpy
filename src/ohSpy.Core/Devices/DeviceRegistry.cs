@@ -115,6 +115,35 @@ internal sealed class DeviceRegistry(IUiDispatcher ui) : IDeviceRegistry
         }
     }
 
+    /// <summary>
+    /// Story 5.3 rescan prune (FR-023). Removes every entry not seen since <paramref name="epochUtc"/>
+    /// via the shared <see cref="RemoveCore"/> cascade (byebye-identical), returning the count pruned.
+    /// Snapshots the UDNs FIRST (same rationale as <see cref="Clear"/>: a <see cref="DeviceRemoved"/>
+    /// handler may re-read the registry, and we never iterate a collection we mutate). Idempotent — an
+    /// entry already gone (e.g. byebye'd mid-window) is simply absent, so its UDN raises no second
+    /// <see cref="DeviceRemoved"/>. Responders / in-window alives kept their <c>LastSeenUtc</c> fresh and
+    /// survive.
+    /// </summary>
+    public int PruneNotSeenSince(DateTime epochUtc)
+    {
+        ui.AssertOnUiThread();
+
+        // Snapshot keys before mutating (see Clear()). Evaluate the predicate against the live entry at
+        // removal time so a refresh that landed after the snapshot is respected.
+        var udns = _entries.Keys.ToArray();
+        var pruned = 0;
+        foreach (var udn in udns)
+        {
+            if (_entries.TryGetValue(udn, out var entry) && entry.LastSeenUtc < epochUtc)
+            {
+                RemoveCore(udn); // cancel + dispose DeviceCts + raise DeviceRemoved (byebye-identical)
+                pruned++;
+            }
+        }
+
+        return pruned;
+    }
+
     private void RemoveCore(string udn)
     {
         if (_entries.TryRemove(udn, out var entry))
