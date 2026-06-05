@@ -1,29 +1,28 @@
 namespace ohSpy.Core.Diagnostics;
 
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 internal sealed class DiagnosticEmitter : IDiagnosticEmitter
 {
     private readonly ILogger<DiagnosticEmitter> _logger;
     private readonly IDiagnosticRingSink _ring;
     private readonly IDiagnosticFileSink _file;
-    private readonly IOptions<DiagnosticOptions> _options;
+    private readonly IDiagnosticLevelGate _gate;
 
     public DiagnosticEmitter(
         ILogger<DiagnosticEmitter> logger,
         IDiagnosticRingSink ring,
         IDiagnosticFileSink file,
-        IOptions<DiagnosticOptions> options)
+        IDiagnosticLevelGate gate)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(ring);
         ArgumentNullException.ThrowIfNull(file);
-        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(gate);
         _logger = logger;
         _ring = ring;
         _file = file;
-        _options = options;
+        _gate = gate;
     }
 
     public void Verbose(string category, string message, DiagnosticContext context = default)
@@ -42,9 +41,13 @@ internal sealed class DiagnosticEmitter : IDiagnosticEmitter
     {
         // AC-8.7: allocation-elision. The threshold check happens BEFORE constructing the
         // DiagnosticEntry record, capturing DateTime.UtcNow, or building the EventId. If
-        // below MinSeverity, return immediately — zero DiagnosticEntry allocation, zero
-        // downstream work.
-        if (severity < _options.Value.MinSeverity)
+        // below the gate's MinSeverity, return immediately — zero DiagnosticEntry allocation,
+        // zero downstream work. Story 5.1 (Q1): the gate is a runtime-mutable seam
+        // (IDiagnosticLevelGate, a single Volatile.Read of an int) so the Diagnostics viewer
+        // can flip the Verbose firehose on/off at runtime — the shipped DiagnosticOptions
+        // .MinSeverity is init-only and cannot serve that. The gate was SEEDED from
+        // DiagnosticOptions.MinSeverity at startup, so the configured default still holds.
+        if (severity < _gate.MinSeverity)
         {
             return;
         }

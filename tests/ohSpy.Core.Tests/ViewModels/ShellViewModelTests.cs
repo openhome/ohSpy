@@ -56,7 +56,8 @@ public sealed class ShellViewModelTests
         CapturingDiagnosticEmitter Diag,
         TaggedFactory<RecordingSsdpTransport> Transports,
         TaggedFactory<RecordingCallbackHost> Hosts,
-        IUiDispatcher Ui);
+        IUiDispatcher Ui,
+        FakeDiagnosticsLauncher DiagnosticsLauncher);
 
     private static Harness NewHarness(IUiDispatcher? ui = null, params NetworkAdapter[] adapters)
     {
@@ -79,6 +80,7 @@ public sealed class ShellViewModelTests
             new FakeUriLauncher(), new FakePropertiesLauncher(),
             new FakeInvocationPopupLauncher(), new FakeSubscriptionPopupLauncher());
 
+        var diagnosticsLauncher = new FakeDiagnosticsLauncher();
         var vm = new ShellViewModel(
             enumerator,
             transports.Next,
@@ -88,15 +90,29 @@ public sealed class ShellViewModelTests
             registry,
             ui,
             diag,
+            diagnosticsLauncher,
             nodeServices);
 
-        return new Harness(vm, rec, registry, subClient, diag, transports, hosts, ui);
+        return new Harness(vm, rec, registry, subClient, diag, transports, hosts, ui, diagnosticsLauncher);
     }
 
     private static async Task StartAsync(Harness h)
     {
         await h.Vm.StartAsync(CancellationToken.None);
         await h.Vm.WaitForStartupAsync();
+    }
+
+    // ── Story 5.1 — OpenDiagnosticsCommand crosses the Core/App launcher seam ────
+    [Fact]
+    [Trait("ac", "AC-5.1.5")]
+    public void OpenDiagnosticsCommand_InvokesLauncher()
+    {
+        var h = NewHarness();
+
+        h.Vm.OpenDiagnosticsCommand.Execute(null);
+
+        h.DiagnosticsLauncher.OpenCount.Should().Be(1,
+            "the View → Diagnostics command delegates to IDiagnosticsLauncher.Open (Pattern 2: Core cannot new a Window)");
     }
 
     // ── AC-5.2.3 — the 10-step order ────────────────────────────────────────────

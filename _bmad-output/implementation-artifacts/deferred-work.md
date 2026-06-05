@@ -1,5 +1,9 @@
 # Deferred Work
 
+## Deferred from: code review of 5-1-diagnostics-viewer-window (2026-06-05)
+
+- **P3 — Redundant `Title = "Diagnostics"` in code-behind** [`src/ohSpy.App/Views/DiagnosticsWindow.xaml.cs:32`] — `DiagnosticsWindow.xaml` already sets `Title="Diagnostics"` declaratively; the code-behind redundantly sets it again in the constructor. Harmless double-set (last-writer wins, same value). Remove the code-behind line in a future XAML/code-behind clean-up pass.
+
 ## ✅ RESOLVED 2026-06-04 — deferred UI smokes run on the live Linn network (Story 5.2 keystone smoke)
 
 The Story 5.2 keystone smoke (live Linn/OpenHome network, multi-adapter) **cleared the whole deferred-smoke debt**: the **Story 4.3 event-stream smoke** (subscribe → live NOTIFY rows + latest-values + concurrent popups + lapse banner), the **Story 3.2 steps 5/6/7** (transport-error styling, device-gone banner, close-mid-invoke), and the **Story 3.3 numeric / off-step / loading** steps all PASSED. (Two App-side bugs were found + fixed en route: device-tree "Loading…" stuck `a55ed74`; subscription-popup NOTIFY-property render crash `63e2378`.) The `5.2` adapter switch superseded the retro Action-I `OHSPY_ADAPTER` override (not built). The individual entries below for those smokes are now historical.

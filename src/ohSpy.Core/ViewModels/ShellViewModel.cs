@@ -2,6 +2,7 @@ namespace ohSpy.Core.ViewModels;
 
 using System.Collections.Generic;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using ohSpy.Core.Devices;
 using ohSpy.Core.Diagnostics;
 using ohSpy.Core.Discovery;
@@ -32,6 +33,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
     private readonly IDeviceRegistry _registry;
     private readonly IUiDispatcher _ui;
     private readonly IDiagnosticEmitter _diag;
+    private readonly IDiagnosticsLauncher _diagnosticsLauncher;
 
     private AdapterScope? _adapterScope;
     private IEventCallbackHost? _callbackHost; // A23: owned here, rebuilt on switch (cannot re-start after dispose)
@@ -62,6 +64,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
         IDeviceRegistry registry,
         IUiDispatcher ui,
         IDiagnosticEmitter diag,
+        IDiagnosticsLauncher diagnosticsLauncher,
         NodeServices nodeServices)
     {
         _adapterEnum  = adapterEnum;
@@ -72,9 +75,19 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
         _registry     = registry;
         _ui           = ui;
         _diag         = diag;
+        _diagnosticsLauncher = diagnosticsLauncher;
         _deviceTree  = new DeviceTreeViewModel(registry, ui, nodeServices);
         _ssdpLog     = new SsdpLogViewModel(discovery, ui); // subscribes to AnnouncementReceived (app-lifetime)
     }
+
+    /// <summary>
+    /// Story 5.1 (FR-041): open the Diagnostics viewer from the View menu. Delegates to the App-side
+    /// launcher across the Core/App boundary (Pattern 2 forbids Core → App; ShellViewModel is Core and
+    /// cannot <c>new</c> a WinUI Window). The launcher applies the canonical Activate-then-Adopt
+    /// sequence and re-activates the existing single viewer if already open.
+    /// </summary>
+    [RelayCommand]
+    private void OpenDiagnostics() => _diagnosticsLauncher.Open();
 
     /// <summary>The currently-bound adapter IPv4 (null before startup / on the zero-adapter host).</summary>
     public System.Net.IPAddress? CurrentAdapterIPv4 => _adapterScope?.CurrentAdapterIPv4;

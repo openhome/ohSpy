@@ -14,8 +14,11 @@ using ohSpy.Core.Diagnostics;
 /// </summary>
 public class DiagnosticEmitterTests
 {
-    private static IOptions<DiagnosticOptions> Opts(DiagSeverity minSeverity = DiagSeverity.Verbose) =>
-        Options.Create(new DiagnosticOptions { MinSeverity = minSeverity });
+    // Story 5.1 (Q1): the emitter now gates on the runtime IDiagnosticLevelGate (seeded from
+    // DiagnosticOptions.MinSeverity) instead of the init-only option. This helper builds a real gate
+    // at the requested level so the existing fan-out / elision / mapping tests keep their intent.
+    private static DiagnosticLevelGate Gate(DiagSeverity minSeverity = DiagSeverity.Verbose) =>
+        new(Options.Create(new DiagnosticOptions { MinSeverity = minSeverity }));
 
     [Fact]
     [Trait("ac", "AC-3")]
@@ -24,7 +27,7 @@ public class DiagnosticEmitterTests
         var logger = new CapturingLogger<DiagnosticEmitter>();
         var ring = new RecordingRingSink();
         var file = new RecordingFileSink();
-        var emitter = new DiagnosticEmitter(logger, ring, file, Opts());
+        var emitter = new DiagnosticEmitter(logger, ring, file, Gate());
 
         var ctx = new DiagnosticContext { Url = "http://test/" };
         emitter.Warning(DiagCategories.HttpTimeout, "test message", ctx);
@@ -51,7 +54,7 @@ public class DiagnosticEmitterTests
         var logger = new CapturingLogger<DiagnosticEmitter>();
         var ring = new RecordingRingSink();
         var file = new RecordingFileSink();
-        var emitter = new DiagnosticEmitter(logger, ring, file, Opts(DiagSeverity.Information));
+        var emitter = new DiagnosticEmitter(logger, ring, file, Gate(DiagSeverity.Information));
 
         emitter.Verbose(DiagCategories.GenaNotifyReceived, "should be silenced");
 
@@ -67,7 +70,7 @@ public class DiagnosticEmitterTests
         var logger = new CapturingLogger<DiagnosticEmitter>();
         var ring = new RecordingRingSink();
         var file = new RecordingFileSink();
-        var emitter = new DiagnosticEmitter(logger, ring, file, Opts(DiagSeverity.Information));
+        var emitter = new DiagnosticEmitter(logger, ring, file, Gate(DiagSeverity.Information));
 
         // Pre-warm any one-time JIT / static init / tiered-compilation promotion in the
         // early-return path so the snapshot diff measures steady-state allocation only.
@@ -120,7 +123,7 @@ public class DiagnosticEmitterTests
         var logger = new CapturingLogger<DiagnosticEmitter>();
         var ring = new RecordingRingSink();
         var file = new RecordingFileSink();
-        var emitter = new DiagnosticEmitter(logger, ring, file, Opts());
+        var emitter = new DiagnosticEmitter(logger, ring, file, Gate());
 
         switch (severity)
         {
@@ -135,13 +138,90 @@ public class DiagnosticEmitterTests
     }
 
     [Fact]
+    [Trait("ac", "AC-5.1.10")]
+    public void RuntimeGateRaise_StopsBelowGateEntries()
+    {
+        // Story 5.1 (Q1): the emitter gates on the runtime gate, so RAISING the gate at runtime turns
+        // the lower-severity firehose OFF — entries below the new level are no longer emitted.
+        var logger = new CapturingLogger<DiagnosticEmitter>();
+        var ring = new RecordingRingSink();
+        var file = new RecordingFileSink();
+        var gate = Gate(DiagSeverity.Verbose);
+        var emitter = new DiagnosticEmitter(logger, ring, file, gate);
+
+        emitter.Verbose("c", "before-raise"); // emitted (gate = Verbose)
+        ring.Pushed.Should().HaveCount(1);
+
+        gate.MinSeverity = DiagSeverity.Warning; // raise at runtime
+        emitter.Verbose("c", "after-raise");     // dropped
+        emitter.Information("c", "info");         // dropped
+
+        ring.Pushed.Should().HaveCount(1, "raising the runtime gate must stop below-gate entries");
+    }
+
+    [Fact]
+    [Trait("ac", "AC-5.1.10")]
+    public void RuntimeGateLower_StartsBelowGateEntries()
+    {
+        // LOWERING the gate at runtime turns the firehose ON — Verbose entries start entering.
+        var logger = new CapturingLogger<DiagnosticEmitter>();
+        var ring = new RecordingRingSink();
+        var file = new RecordingFileSink();
+        var gate = Gate(DiagSeverity.Information);
+        var emitter = new DiagnosticEmitter(logger, ring, file, gate);
+
+        emitter.Verbose("c", "before-lower"); // dropped (gate = Information)
+        ring.Pushed.Should().BeEmpty();
+
+        gate.MinSeverity = DiagSeverity.Verbose; // lower at runtime
+        emitter.Verbose("c", "after-lower");     // emitted
+
+        ring.Pushed.Should().HaveCount(1, "lowering the runtime gate must start below-gate entries");
+        ring.Pushed[0].Message.Should().Be("after-lower");
+    }
+
+    [Fact]
+    [Trait("ac", "AC-8.7")]
+    public void RuntimeGate_BelowGate_AllocatesZeroDiagnosticEntries()
+    {
+        // AC-8.7 preserved under the runtime gate: a below-gate severity still returns before any
+        // DiagnosticEntry allocation, even after the gate was raised at runtime.
+        var logger = new CapturingLogger<DiagnosticEmitter>();
+        var ring = new RecordingRingSink();
+        var file = new RecordingFileSink();
+        var gate = Gate(DiagSeverity.Verbose);
+        var emitter = new DiagnosticEmitter(logger, ring, file, gate);
+        gate.MinSeverity = DiagSeverity.Warning; // raise so Verbose is below-gate
+
+        for (int i = 0; i < 10_000; i++)
+        {
+            emitter.Verbose("warm", "warm");
+        }
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        const int iterations = 100_000;
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < iterations; i++)
+        {
+            emitter.Verbose("category", "message");
+        }
+        var after = GC.GetAllocatedBytesForCurrentThread();
+        var bytesPerCall = (double)(after - before) / iterations;
+
+        bytesPerCall.Should().BeLessThan(4d,
+            $"AC-8.7 zero-alloc must hold under the runtime gate; observed {bytesPerCall:F3} bytes/call");
+    }
+
+    [Fact]
     [Trait("ac", "AC-8.8")]
     public void EmitCall_ReturnsWithin100Microseconds()
     {
         var logger = new CapturingLogger<DiagnosticEmitter>();
         var ring = new RecordingRingSink();
         var file = new RecordingFileSink();
-        var emitter = new DiagnosticEmitter(logger, ring, file, Opts());
+        var emitter = new DiagnosticEmitter(logger, ring, file, Gate());
 
         // Pre-warm.
         for (int i = 0; i < 1000; i++)

@@ -41,6 +41,14 @@ internal static class ServiceRegistration
         // transparently — no call-site code changes.
         services.Configure<DiagnosticOptions>(_ => { /* MinSeverity defaults to Information */ });
 
+        // Story 5.1 (Q1) — runtime-mutable emitter-severity gate. The DiagnosticEmitter reads THIS
+        // (a single Volatile.Read of an int) on every emit instead of the init-only
+        // DiagnosticOptions.MinSeverity, so the Diagnostics viewer's MinSeverity control can flip the
+        // Verbose firehose on/off at runtime. Seeded FROM DiagnosticOptions.MinSeverity at construction
+        // so the configured startup default is preserved. Singleton (one gate, shared by the emitter and
+        // the viewer VM). MUST be registered BEFORE the emitter (ctor dependency).
+        services.AddSingleton<IDiagnosticLevelGate, DiagnosticLevelGate>();
+
         // Story 2.3: registry-backed identity resolution replaces the NullIdentityLookup
         // placeholder. Resolves device UUID → friendly name for the FR-041 Identity column.
         services.AddSingleton<IDiagnosticIdentityLookup, RegistryIdentityLookup>();
@@ -179,6 +187,14 @@ internal static class ServiceRegistration
         // fetch + parse an SCPD on expand. All members are already-registered singletons;
         // the bundle itself is a stateless singleton threaded into the VM graph by ShellViewModel.
         services.AddSingleton<NodeServices>();
+
+        // Story 5.1 — Diagnostics viewer (FR-041). Same launcher-seam shape as the 2.9/3.2/4.3 blocks.
+        // Registered BEFORE the ShellViewModel line so IDiagnosticsLauncher auto-resolves into its ctor.
+        // The VM is a singleton (single app-lifetime viewer) bound to the singleton ring sink + the
+        // runtime gate. Concrete + interface (dual reg) on the launcher so App.OnLaunched can set ShellWindow.
+        services.AddSingleton<DiagnosticsViewModel>();
+        services.AddSingleton<DiagnosticsLauncher>();
+        services.AddSingleton<IDiagnosticsLauncher>(sp => sp.GetRequiredService<DiagnosticsLauncher>());
 
         // Story 2.5 — Main window shell ViewModel. Singleton: one window, one ShellViewModel.
         // ShellViewModel owns the AdapterScope lifetime (Amendment A26 migration from App.xaml.cs).
