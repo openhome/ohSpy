@@ -166,8 +166,44 @@ public sealed class SsdpParserTests
         var result = parser.Parse(payload, "192.0.2.42:1900");
 
         result.Should().BeNull();
+        // An unrecognised start-line is a genuine Warning AND now carries the reason (the offending line)
+        // so a real malformed packet is diagnosable, not a reasonless "ssdp parse failed".
         cap.Entries.Should().ContainSingle(e =>
-            e.Severity == "Warning" && e.Category == DiagCategories.SsdpParse);
+            e.Severity == "Warning" && e.Category == DiagCategories.SsdpParse &&
+            !string.IsNullOrEmpty(e.Context.ErrorText) && e.Context.ErrorText!.Contains("GARBAGE FIRST LINE"));
+    }
+
+    [Fact]
+    [Trait("ac", "AC-2.4.3")]
+    public void Parse_MSearchRequest_LogsVerbose_NotWarning()
+    {
+        var parser = MakeParser(out var cap);
+        // A received M-SEARCH request is valid SSDP, not an announcement — must NOT be a "parse failed"
+        // Warning (it floods the log); it is a Verbose observation suppressed at the default gate.
+        var payload = Bytes(
+            "M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 2\r\nST: ssdp:all\r\n\r\n");
+
+        var result = parser.Parse(payload, "192.0.2.7:54321");
+
+        result.Should().BeNull();
+        cap.Entries.Should().NotContain(e => e.Severity == "Warning");
+        cap.Entries.Should().ContainSingle(e =>
+            e.Severity == "Verbose" &&
+            e.Category == DiagCategories.SsdpSearchObserved &&
+            e.Context.RemoteEndpoint == "192.0.2.7:54321");
+    }
+
+    [Fact]
+    [Trait("ac", "AC-2.4.3")]
+    public void Parse_EmptyPayload_Warns_WithReason()
+    {
+        var parser = MakeParser(out var cap);
+
+        parser.Parse([], "192.0.2.1:1900").Should().BeNull();
+
+        cap.Entries.Should().ContainSingle(e =>
+            e.Severity == "Warning" && e.Category == DiagCategories.SsdpParse &&
+            !string.IsNullOrEmpty(e.Context.ErrorText));
     }
 
     // ── ExtractUdn tests (Amendment A30 — the UDN is an OPAQUE string; NO Guid parse) ──────────

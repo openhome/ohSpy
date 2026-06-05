@@ -1005,7 +1005,8 @@ public static class DiagCategories
     public const string HttpTimeout              = "Http.Timeout";
     public const string HttpTransport            = "Http.Transport";
     public const string HttpOversizeBody         = "Http.OversizeBody";
-    public const string SsdpParse                = "Ssdp.Parse";
+    public const string SsdpParse                = "Ssdp.Parse";               // + ErrorText reason (Story 5.1 smoke)
+    public const string SsdpSearchObserved       = "Ssdp.SearchObserved";       // Verbose: received M-SEARCH request (Story 5.1 smoke)
     public const string SsdpChannelNearFull      = "Ssdp.Channel.NearFull";
     public const string SsdpChannelOverflow      = "Ssdp.Channel.Overflow";
     public const string DescriptionFetch         = "Description.Fetch";

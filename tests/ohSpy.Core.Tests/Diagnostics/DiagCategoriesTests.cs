@@ -41,7 +41,7 @@ public class DiagCategoriesTests
             // HTTP
             "HttpTimeout", "HttpTransport", "HttpOversizeBody",
             // SSDP
-            "SsdpParse", "SsdpChannelNearFull", "SsdpChannelOverflow",
+            "SsdpParse", "SsdpSearchObserved", "SsdpChannelNearFull", "SsdpChannelOverflow",
             // Description
             "DescriptionFetch", "DescriptionFetchMismatch", "DescriptionParse",
             // SCPD

@@ -19,8 +19,16 @@ public static class DiagCategories
     public const string HttpOversizeBody = "Http.OversizeBody";
 
     // ─── SSDP (Story 2.1 / 2.4 — pre-added) ────────────────────────
-    /// <summary>Mandatory context: RemoteEndpoint.</summary>
+    /// <summary>Mandatory context: RemoteEndpoint. Also carries ErrorText (the failure reason).</summary>
     public const string SsdpParse = "Ssdp.Parse";
+
+    /// <summary>
+    /// Verbose: an M-SEARCH *request* was observed on the multicast group (a valid SSDP datagram
+    /// that is simply not an announcement we consume — every control point multicasts these). Logged
+    /// at Verbose so it is suppressed at the default Information gate and only appears when the
+    /// operator turns the firehose on. Mandatory context: RemoteEndpoint.
+    /// </summary>
+    public const string SsdpSearchObserved = "Ssdp.SearchObserved";
 
     /// <summary>Mandatory context: (none beyond message).</summary>
     public const string SsdpChannelNearFull = "Ssdp.Channel.NearFull";

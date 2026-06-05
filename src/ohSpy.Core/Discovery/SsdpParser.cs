@@ -13,7 +13,7 @@ internal sealed class SsdpParser(IDiagnosticEmitter diag)
     {
         if (payload.Length == 0)
         {
-            EmitParseWarning(remoteEndpoint);
+            EmitParseWarning(remoteEndpoint, "empty datagram");
             return null;
         }
 
@@ -22,7 +22,7 @@ internal sealed class SsdpParser(IDiagnosticEmitter diag)
 
         if (lines.Length == 0)
         {
-            EmitParseWarning(remoteEndpoint);
+            EmitParseWarning(remoteEndpoint, "no lines");
             return null;
         }
 
@@ -32,7 +32,20 @@ internal sealed class SsdpParser(IDiagnosticEmitter diag)
 
         if (!isNotify && !isMSearchResponse)
         {
-            EmitParseWarning(remoteEndpoint);
+            // An M-SEARCH *request* is valid SSDP, just not an announcement we consume — every control
+            // point on the segment multicasts these constantly (including this app and Windows itself).
+            // Log at Verbose (suppressed at the default Information gate; the operator can turn the
+            // firehose on), NOT Warning. Anything else is a genuinely unexpected datagram → Warning with
+            // the offending start-line so a real malformed packet is diagnosable, not a silent dot.
+            if (firstLine.StartsWith("M-SEARCH ", StringComparison.OrdinalIgnoreCase))
+            {
+                diag.Verbose(DiagCategories.SsdpSearchObserved, "ssdp M-SEARCH observed",
+                    new DiagnosticContext { RemoteEndpoint = remoteEndpoint });
+            }
+            else
+            {
+                EmitParseWarning(remoteEndpoint, $"unrecognised SSDP start-line: {Truncate(firstLine, 80)}");
+            }
             return null;
         }
 
@@ -107,9 +120,11 @@ internal sealed class SsdpParser(IDiagnosticEmitter diag)
         return null;
     }
 
-    private void EmitParseWarning(string remoteEndpoint)
+    private void EmitParseWarning(string remoteEndpoint, string reason)
     {
         diag.Warning(DiagCategories.SsdpParse, "ssdp parse failed",
-            new DiagnosticContext { RemoteEndpoint = remoteEndpoint });
+            new DiagnosticContext { RemoteEndpoint = remoteEndpoint, ErrorText = reason });
     }
+
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";
 }
