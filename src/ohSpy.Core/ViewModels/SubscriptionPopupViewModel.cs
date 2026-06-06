@@ -50,12 +50,16 @@ public sealed partial class SubscriptionPopupViewModel : ObservableObject, IDisp
     /// <summary>Header label: the service-type tail (reusing the ":service:" logic).</summary>
     public string Title { get; }
 
+    /// <summary>Cap for <see cref="Events"/> (FR-033 + D6). Named so it reads as a single source of
+    /// truth (mirrors <c>SsdpLogViewModel.Capacity</c>) rather than a magic literal in the initialiser.</summary>
+    public const int EventListCapacity = 5000;
+
     /// <summary>
-    /// The raw newest-first event stream (FR-033 + D6), capped at 5,000 (the 5,001st evicts the oldest
-    /// tail via <c>PrependNewest</c> → <c>Add(0)</c>+<c>Remove(5000)</c>, never <c>Reset</c>).
-    /// UI-thread-owned — every mutation is marshalled (§0).
+    /// The raw newest-first event stream (FR-033 + D6), capped at <see cref="EventListCapacity"/> (the
+    /// 5,001st evicts the oldest tail via <c>PrependNewest</c> → <c>Add(0)</c>+<c>Remove(5000)</c>, never
+    /// <c>Reset</c>). UI-thread-owned — every mutation is marshalled (§0).
     /// </summary>
-    public BoundedObservableCollection<EventNotification> Events { get; } = new(5000);
+    public BoundedObservableCollection<EventNotification> Events { get; } = new(EventListCapacity);
 
     /// <summary>
     /// Anchored "Latest property values" summary (FR-033): newest value per evented property name,

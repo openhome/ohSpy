@@ -1,5 +1,11 @@
 # Deferred Work
 
+## Deferred from: code review of 6-2-soak-tests-30-min-no-crash-8-hour-scale-ceiling (2026-06-06)
+
+- **P3 — `EmitNotifyBurstAsync` emits NOTIFYs to farm devices without confirmed active subscriptions** [`tests/ohSpy.Soak.Tests/Harness/SoakRunner.cs:186-200`] — Burst iterates the first 8 farm devices regardless of whether a live subscription exists for that device's SID; unmatched SIDs are dropped idempotently by `SubscriptionClient`. Not a crash; reduces event-list fill rate in the quick smoke. Benign fidelity gap; cap assertions still hold.
+- **P3 — `SoakHarness.DisposeAsync` dispose ordering mirrors `NewHarness` pattern** [`tests/ohSpy.Soak.Tests/Harness/SoakHarness.cs:235-258`] — `Shell.DisposeAsync()` before `_discovery.DisposeAsync()` is the same order as the shipped `ShellViewModelTests.NewHarness`. Not new; pre-existing pattern.
+- **P3 — `DeviceFarm.OnMSearch` fire-and-forget burst not tracked through teardown** [`tests/ohSpy.Soak.Tests/Farm/DeviceFarm.cs:98`] — `_ = BurstAliveAsync(...)` could race channel teardown during `DisposeAsync`; burst swallows all exceptions. Tolerated/pre-existing fire-and-forget pattern.
+
 ## Story 6.1 manual UI verification — 2 ACs deferred to a busier-network session (2026-06-05)
 
 The Story 6.1 walkthrough passed on the live Linn network, but two ACs could not be exercised on that LAN and are deferred (Project Lead to re-test on a busier/slower network):

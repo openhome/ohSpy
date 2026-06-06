@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Story 6.2 — SOAK TEST PROJECT.
+
+    ⚠️ This project is DELIBERATELY NOT referenced by ohSpy.sln (see ohSpy.sln — it lists
+    ohSpy.App, ohSpy.Core, ohSpy.Core.Tests only). It is invoked BY PATH ONLY:
+
+        dotnet test tests/ohSpy.Soak.Tests
+
+    Rationale (Story 6.2 #2): a bare `dotnet test` / a solution-wide run must NEVER trigger
+    a multi-hour soak. Project isolation is the robust guard; the [Trait("category","soak")]
+    on every test is belt-and-braces (the chaos hook's category=chaos filter and the documented
+    everyday "category!=chaos and category!=soak" filter both exclude it).
+
+    The soak is HEADLESS — it drives the REAL ohSpy.Core VM + service stack against an
+    in-process FakeUpnpDevice farm. It NEVER references WinUI (CoreAppBoundaryTests forbid it).
+
+    Inherits TreatWarningsAsErrors + the VSTHRD async-discipline analyzers from the root
+    Directory.Build.props (same gates as ohSpy.Core.Tests).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <!-- The FakeUpnpDevice farm uses Kestrel + WebApplication. The ASP.NET Core shared
+         framework ships with the .NET 10 SDK (no PackageVersion to maintain). It also
+         transitively provides Microsoft.Extensions.{Options,Logging} for the real emitter
+         fan-out wiring. Mirrors ohSpy.Core.Tests. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Soak drives the REAL Core stack; it needs Core internals + test seams
+         (DiagnosticFileSink internal temp-dir ctor; ShellViewModel.SetRescanDelayForTest /
+         WaitForStartupAsync). One IVT line in ohSpy.Core.csproj grants this (mirrors the
+         existing ohSpy.Core.Tests / ohSpy.App IVT pattern). The soak builds its OWN farm
+         primitives (it does NOT depend on ohSpy.Core.Tests internals). -->
+    <ProjectReference Include="..\..\src\ohSpy.Core\ohSpy.Core.csproj" />
+  </ItemGroup>
+
+</Project>

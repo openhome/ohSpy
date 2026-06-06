@@ -17,6 +17,11 @@
     <InternalsVisibleTo Include="ohSpy.Core.Tests" />
     <!-- Story 1.3 (+ 1.5): the App composition root registers internal-sealed Core types (UpnpHttpClient, DiagnosticEmitter, DiagnosticRingSink, NullIdentityLookup). -->
     <InternalsVisibleTo Include="ohSpy.App" />
+    <!-- Story 6.2: the headless SOAK harness drives the REAL Core stack and needs internal
+         test seams: DiagnosticFileSink's internal temp-dir ctor (rolling log → temp dir, not
+         %LOCALAPPDATA%) + ShellViewModel.SetRescanDelayForTest / WaitForStartupAsync. The soak
+         project is invoked by path only (NOT in ohSpy.sln) so this never affects the default build. -->
+    <InternalsVisibleTo Include="ohSpy.Soak.Tests" />
   </ItemGroup>
 
 </Project>
