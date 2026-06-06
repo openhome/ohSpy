@@ -111,3 +111,57 @@ full-app RSS figure is verified by **Story 6.3's SC-013**. The reports state thi
 the Scale Ceiling are not statistical claims; a single failure is a defect to fix (with its own
 regression test). If a soak run surfaces a real defect, that defect is a separate, minimal fix with its
 own regression test — the soak harness is not gold-plated to mask it.
+
+## Farm-backed performance reproducers (Story 6.3 — PRD §6)
+
+Two PRD §6 budgets need a "busier network" than a dev LAN reliably supplies. They are reproduced
+**headlessly** by REUSING the Story 6.2 farm primitives (nothing new is built in the farm), in
+`tests/ohSpy.Soak.Tests/PerformanceBudgetReproducerTests.cs` (`[Trait("category","soak")]`, excluded from
+`ohSpy.sln` + the chaos hook + the quick filter):
+
+| Reproducer | Budget | Farm primitive | What it asserts headlessly |
+|---|---|---|---|
+| `ColdLargeScpd_Expand_…ViaGiantScpdFarmDevice` | Cold large-SCPD ≤ 2 s, no freeze (FR-100) | `FarmUpnpDevice` `GiantScpd` (120-action) | drives the real `ServiceNodeViewModel` lazy SCPD fetch; cold expand ≤ 2 s; all 120 actions streamed; 0 UI-stalls > 1 s; 0 exceptions |
+| `SustainedChattySsdp_BurstLoop_…NoStallsNoExceptions` | Sustained chatty-SSDP ≥ 20 adv/s ≥ 30 s | `DeviceFarm` burst loop | achieved ≥ 20 adv/s (from live SSDP-log growth); 0 UI-stalls > 1 s; 0 exceptions |
+
+```
+dotnet test tests/ohSpy.Soak.Tests --filter "FullyQualifiedName~PerformanceBudgetReproducerTests"
+```
+
+The sustained-burst window is time-parameterised: `OHSPY_SOAK_BURST_DURATION` (default ~12 s smoke; set
+`00:00:30` for the full ≥ 30 s budget). The **"no dropped frames / no UI freeze" eye-test stays the Project
+Lead's** on the real `ohSpy.App` — a headless harness cannot judge frame drops (same boundary as 6.2).
+
+## Clean-machine install/run smoke (PERMANENT release gate — Story 6.3)
+
+⚠️ **This is a mandatory pre-release gate step** so the install path can never regress silently again
+(the install-blocker the `0x80670016` bootstrap-vs-self-contained contradiction caused — fixed in Story
+6.3, Option 1 truly self-contained; architecture Amendment A32). Walk it on a **fresh Windows 11 box with
+NO .NET 10, NO WindowsAppRuntime, NO Visual Studio** before every L&L / release build:
+
+1. **Build the installer** (the documented `BuildInstaller` one-liner — runs publish → InnoSetup):
+
+   PowerShell:
+   ```
+   dotnet build src\ohSpy.App -t:BuildInstaller -c Release -p:RuntimeIdentifier=win-x64 -p:SelfContained=true -p:WindowsAppSDKSelfContained=true
+   ```
+   → produces `installer/out/ohSpy-setup-<yyyy.MM.dd.HHmm>-x64.exe` (versioned with the D12 build timestamp).
+
+2. **Copy** `ohSpy-setup-<version>-x64.exe` to the fresh Win11 box and **double-click it**.
+3. **SmartScreen** "Windows protected your PC" → **More info → Run anyway** (unsigned by design, PRD §8.1).
+4. **Install** runs to completion **without an Administrator/UAC prompt** (per-user install,
+   `PrivilegesRequired=lowest`); lands in `%LOCALAPPDATA%\Programs\ohSpy\`; Start Menu shortcut
+   `Programs\ohSpy\ohSpy.lnk` exists; the desktop-shortcut checkbox is **unchecked by default**.
+5. **Launch** ohSpy from the Start Menu → the **main window renders** with **NO** native
+   `Windows App Runtime initialisation failed (0x80670016)` dialog (this is the install-blocker fix — the
+   bundled WinAppSDK + .NET runtime load directly; **the UI smoke for the install fix**).
+6. **Discovery** populates the device tree within ~7 s (SC-001 on a clean machine, if an eligible adapter).
+7. **Diagnostics** are written to `%LOCALAPPDATA%\ohSpy\diagnostics\ohSpy-<yyyyMMdd>.log` (AC-8.5).
+8. **Uninstall** via Apps & Features removes `%LOCALAPPDATA%\Programs\ohSpy\` + the Start Menu shortcut, and
+   **PRESERVES** `%LOCALAPPDATA%\ohSpy\diagnostics\` (AC-12.5).
+9. **Rerun the installer** over a prior install → it is detected via the `AppId` GUID and **replaced
+   silently** (no "please uninstall first" prompt). If a prompt appears, add a minimal
+   `SetupAppMutex`/`CloseApplications` to `installer/ohSpy.iss` (verify-first; do **not** change the `AppId`).
+
+Record the result in `docs/verification/6.3-performance-budget-verification-<date>.md` (the §D install
+dry-run table) and tag the L&L-ready build (version `yyyy.MM.dd.HHmm` per D12 + its SHA) in that report.

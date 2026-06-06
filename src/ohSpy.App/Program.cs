@@ -1,60 +1,28 @@
-using System;
-using System.Runtime.InteropServices;
-using Microsoft.Windows.ApplicationModel.DynamicDependency;
-
 namespace ohSpy.App;
+
+using System;
 
 internal static class Program
 {
     [STAThread]
     private static int Main(string[] args)
     {
-        // Bind to the Windows App Runtime self-contained-published alongside this exe.
-        // MUST run before any Microsoft.UI.Xaml type is touched.
-        // API surface (WindowsAppSDK 2.x):
-        //   bool Bootstrap.TryInitialize(uint majorMinorVersion, string versionTag,
-        //                                PackageVersion minVersion, InitializeOptions options,
-        //                                out int hr)
-        // Returns true on success; false + non-zero hr on failure.
-        var minVersion = new PackageVersion(major: 2, minor: 1, build: 3, revision: 0);
-        var ok = Bootstrap.TryInitialize(
-            majorMinorVersion: 0x00020001,            // WindowsAppSDK 2.1.x
-            versionTag: "",
-            minVersion: minVersion,
-            options: Bootstrap.InitializeOptions.None,
-            out var hr);
+        // Story 6.3 (Option 1 — truly self-contained): this app is published self-contained
+        // (csproj: WindowsPackageType=None + WindowsAppSDKSelfContained=true + SelfContained=true), so the
+        // Windows App SDK runtime + the .NET runtime ship NEXT TO the exe and are loaded directly via the
+        // app's own .deps.json / runtimeconfig. There is NO framework-dependent bootstrapper:
+        // Application.Start binds the bundled WinAppSDK runtime itself.
+        //
+        // The previous Bootstrap.TryInitialize(2.1.3 minVersion) call required an INSTALLED Windows App
+        // Runtime ≥ 2.1.3 — the opposite of self-contained — and died on a clean box with the native
+        // MessageBox "Windows App Runtime initialisation failed (0x80670016)". Removing it makes the
+        // self-contained config real (architecture amendment A32; deferred-work resolved in Story 6.3).
 
-        if (!ok)
-        {
-            // Bootstrap failed — runtime missing or mismatched.
-            // No WinUI available yet; no diagnostic sink yet. Native message box + exit is terminal.
-            _ = MessageBoxW(
-                IntPtr.Zero,
-                $"Windows App Runtime initialisation failed (0x{hr:X8}).\n\n" +
-                "Reinstall ohSpy. If the problem persists, contact the ohSpy maintainers.",
-                "ohSpy",
-                MB_OK | MB_ICONERROR);
-            return hr;
-        }
-
-        try
-        {
-            // CA1806 suppressed: WinUI 3's Application.Start consumes the App instance via internal
-            // machinery; the lambda is the canonical Microsoft-documented startup pattern.
+        // CA1806 suppressed: WinUI 3's Application.Start consumes the App instance via internal
+        // machinery; the lambda is the canonical Microsoft-documented startup pattern.
 #pragma warning disable CA1806
-            Microsoft.UI.Xaml.Application.Start(_ => new App());
+        Microsoft.UI.Xaml.Application.Start(_ => new App());
 #pragma warning restore CA1806
-        }
-        finally
-        {
-            Bootstrap.Shutdown();
-        }
         return 0;
     }
-
-    private const uint MB_OK = 0x0u;
-    private const uint MB_ICONERROR = 0x10u;
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
-    private static extern int MessageBoxW(IntPtr hWnd, string text, string caption, uint type);
 }

@@ -78,6 +78,10 @@ internal sealed class SoakHarness : IAsyncDisposable
     public IEventCallbackHost? CurrentCallbackHost =>
         _callbackHosts.Count > 0 ? _callbackHosts[^1] : null;
 
+    /// <summary>Story 6.3 — the farm's 120-action GiantScpd device (set when built with misbehaving on),
+    /// for the cold-large-SCPD reproducer. Its UDN maps to a device node in <see cref="Shell"/>'s tree.</summary>
+    public FarmUpnpDevice? GiantScpdDevice => _farm.GiantScpdDevice;
+
     public SoakHarness(int advertsPerSecond)
     {
         AdvertsPerSecond = advertsPerSecond;

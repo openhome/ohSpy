@@ -1500,7 +1500,7 @@ None. Per Non-Goal "no settings persistence", values do NOT round-trip to disk b
 
 **This decision back-applies upstream:**
 
-- **Starter Template Evaluation (Step 3):** the `dotnet new winui` template defaults to **Packaged** (MSIX) mode. ohSpy switches to **Unpackaged** mode via `<WindowsPackageType>None</WindowsPackageType>` in `ohSpy.App.csproj`. The Windows App Runtime is bundled via self-contained publish and bound at app startup via the bootstrap initialiser.
+- **Starter Template Evaluation (Step 3):** the `dotnet new winui` template defaults to **Packaged** (MSIX) mode. ohSpy switches to **Unpackaged** mode via `<WindowsPackageType>None</WindowsPackageType>` in `ohSpy.App.csproj`. The Windows App Runtime is bundled via self-contained publish and loaded directly from the bundle by `Application.Start` — **no bootstrap initialiser** (`WindowsAppSDKSelfContained=true` suppresses it; see [Amendment A32](#amendment-a32--truly-self-contained-no-bootstrap-initialiser-decision-12--story-63)).
 - **PRD §8.1:** "unsigned MSIX installer" line is revised in the PRD to "unsigned InnoSetup installer (single `setup.exe`)" — see the PRD addendum/revision note.
 
 **No CI rationale:**
@@ -1638,7 +1638,9 @@ internal static class Program
 }
 ```
 
-A self-contained publish bundles the Windows App Runtime alongside the EXE; `Bootstrap.TryInitialize` finds the bundled runtime and binds to it. The installer carries everything; the user's machine needs nothing pre-installed.
+A self-contained publish bundles the Windows App Runtime alongside the EXE. The installer carries everything; the user's machine needs nothing pre-installed.
+
+> ⚠️ *Corrected 2026-06-06 by [Amendment A32 — truly self-contained startup; `Bootstrap.TryInitialize` removed (Story 6.3)](#amendment-a32--truly-self-contained-startup-bootstraptryinitialize-removed-decision-12-correction): the original sentence here claimed "`Bootstrap.TryInitialize` finds the bundled runtime and binds to it." That is **wrong** — the framework-dependent bootstrapper looks for an **installed** runtime, never the self-contained sibling, so on a clean box it died at `0x80670016`. Self-contained and the bootstrapper are mutually exclusive; Story 6.3 removed the bootstrap call so `Application.Start` loads the bundled runtime directly.*
 
 **csproj changes (consequence):**
 
@@ -1681,7 +1683,7 @@ A self-contained publish bundles the Windows App Runtime alongside the EXE; `Boo
 - **AC-12.3** Installer installs the app to `%LOCALAPPDATA%\Programs\ohSpy\` per-user with no Administrator required.
 - **AC-12.4** App launches successfully on a clean Windows 11 machine without any pre-installed runtimes (verifies self-contained bundling).
 - **AC-12.5** Uninstaller removes install dir + Start Menu shortcut; preserves `%LOCALAPPDATA%\ohSpy\diagnostics\`.
-- **AC-12.6** `<WindowsPackageType>None</WindowsPackageType>` is set in `ohSpy.App.csproj`; bootstrap initialiser runs before any WinUI type is touched.
+- **AC-12.6** `<WindowsPackageType>None</WindowsPackageType>` is set in `ohSpy.App.csproj`; `Application.Start` loads the bundled WinAppSDK runtime directly — no bootstrap initialiser call is required (truly self-contained; see [Amendment A32](#amendment-a32--truly-self-contained-no-bootstrap-initialiser-decision-12--story-63)).
 
 **Rationale:**
 
@@ -3017,6 +3019,20 @@ The original Decision 10 established the Win32 owner relationship via `SetWindow
 **Supersedes:** Decision 10's "four OS-delivered behaviours" framing, its FR-046 behaviours table, and AC-10.1 / AC-10.3 / AC-10.4. **AC-10.2** (close-with-parent) and **AC-10.5** (`Activate()`-then-`Adopt` at all popup sites) stand. The z-order manual-test now reads: open a popup, click the shell → shell comes forward over the popup; re-click the popup → it comes forward.
 
 **Applied to:** `WindowOwnershipManager` (App). No Core change; no unit-test change (App windowing layer — smoke-verified 2026-06-04).
+
+---
+
+### Amendment A32 — Truly self-contained startup; `Bootstrap.TryInitialize` removed (Decision 12 correction)
+
+**Date:** 2026-06-06 (Story 6.3 — the final story of Epic 6). **Commit:** _(this story)_.
+
+**The error being corrected:** Decision 12 (L1641) claimed *"a self-contained publish bundles the Windows App Runtime alongside the EXE; `Bootstrap.TryInitialize` finds the bundled runtime and binds to it."* That sentence is **wrong**, and the shipped `Program.cs` (from Story 1.1, codified by Amendment A7) acted on it: `Program.Main` unconditionally called the **framework-dependent** `Bootstrap.TryInitialize(0x00020001, "", minVersion 2.1.3.0, …)`. The bootstrapper looks for a **centrally-installed** Windows App Runtime — it never binds the self-contained sibling laid down next to the exe. Self-contained (`WindowsAppSDKSelfContained=true` + `SelfContained=true`) and the bootstrapper are **mutually exclusive**, so the self-contained config was a **startup no-op** and a clean Win11 box (no installed runtime ≥ 2.1.3) died at the native MessageBox **`Windows App Runtime initialisation failed (0x80670016)`** — `Program.Main`'s own failure dialog. This blocked AC-12.4 ("app launches on a clean box") and the Story 6.3 install dry-run.
+
+**The fix (Option 1 — truly self-contained, the Project-Lead decision):** the `Bootstrap.TryInitialize` / `Bootstrap.Shutdown` calls, the `0x80670016` `MessageBoxW` failure path, the `PackageVersion minVersion`, and the `Microsoft.Windows.ApplicationModel.DynamicDependency` / `MessageBoxW` P/Invoke plumbing are **removed** from `Program.cs`. The csproj self-contained flags are **retained** (they become real, not a no-op). `Application.Start(_ => new App())` now loads the bundled WinAppSDK runtime **directly** via the app's own `.deps.json` / `runtimeconfig.json` — no bootstrapper, no runtime-version coupling. A `dotnet publish -r win-x64 --self-contained` lays the WinAppSDK native runtime (`Microsoft.ui.xaml.dll`, `CoreMessagingXP.dll`, `DWriteCore.dll`, `Microsoft.WindowsAppRuntime.dll`, `MRM.dll`, `dwmcorei.dll`, `Microsoft.Internal.FrameworkUdk.dll`, …) **and** the .NET runtime (`coreclr.dll`, `clrjit.dll`, `System.Private.CoreLib.dll`, `hostfxr/hostpolicy`) beside `ohSpy.App.exe` (`runtimeconfig.json` carries `includedFrameworks`, the self-contained marker). No prerequisite installer, no Admin (AC-12.3 + AC-12.4).
+
+**Rejected alternative (Option 2 — framework-dependent):** keep `Bootstrap.TryInitialize`, drop the self-contained flags, and make the InnoSetup installer carry + run `WindowsAppRuntimeInstall-x64.exe` (≥ 2.1.3) as a prerequisite. Rejected: larger installer change, a per-machine runtime install step (possible elevation), and it re-introduces the runtime-version coupling that produced `0x80670016`.
+
+**Supersedes:** the L1641 "bootstrapper finds the bundled runtime" sentence; the framework-dependent intent of **Amendment A7** (A7's *signature* documentation remains historically accurate, but the call it documents is now removed). The `installer/ohSpy.iss` `[Files] Source: "{#PublishDir}\*"` payload becomes a genuinely runnable self-contained bundle as a consequence (no `.iss` change required). **Applied to:** `src/ohSpy.App/Program.cs` (App only). No Core change (Core suite 553/2 unchanged); App `-warnaserror` 0/0 bar the pre-existing benign WMC1506. Resolves the `deferred-work.md` "bootstrap ↔ self-contained contradiction" entry (2026-06-03).
 
 ---
 
