@@ -63,7 +63,13 @@
           Condition="'$(RuntimeIdentifier)' == 'win-x64' Or '$(BuildInstaller)' == 'true'">
 
     <PropertyGroup>
-      <InnoSetupCompiler Condition="'$(InnoSetupCompiler)' == ''">$(ProgramFiles)\Inno Setup 6\ISCC.exe</InnoSetupCompiler>
+      <!-- Inno Setup is a 32-bit app and installs to Program Files (x86) by DEFAULT, but may be in the
+           64-bit Program Files too; probe both (prefer x86). Override with -p:InnoSetupCompiler=... -->
+      <_IsccX86>$([System.Environment]::GetFolderPath(SpecialFolder.ProgramFilesX86))\Inno Setup 6\ISCC.exe</_IsccX86>
+      <_IsccX64>$(ProgramFiles)\Inno Setup 6\ISCC.exe</_IsccX64>
+      <InnoSetupCompiler Condition="'$(InnoSetupCompiler)' == '' And Exists('$(_IsccX86)')">$(_IsccX86)</InnoSetupCompiler>
+      <InnoSetupCompiler Condition="'$(InnoSetupCompiler)' == '' And Exists('$(_IsccX64)')">$(_IsccX64)</InnoSetupCompiler>
+      <InnoSetupCompiler Condition="'$(InnoSetupCompiler)' == ''">$(_IsccX86)</InnoSetupCompiler>
       <InstallerOutputDir>$(MSBuildThisFileDirectory)..\..\installer\out</InstallerOutputDir>
       <InstallerVersion>$([System.DateTime]::UtcNow.ToString("yyyy.MM.dd.HHmm"))</InstallerVersion>
       <!-- Deterministic publish path: matches the default Publish target output regardless of whether
