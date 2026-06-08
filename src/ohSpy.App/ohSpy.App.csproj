@@ -63,10 +63,13 @@
           Condition="'$(RuntimeIdentifier)' == 'win-x64' Or '$(BuildInstaller)' == 'true'">
 
     <PropertyGroup>
-      <!-- Inno Setup is a 32-bit app and installs to Program Files (x86) by DEFAULT, but may be in the
-           64-bit Program Files too; probe both (prefer x86). Override with -p:InnoSetupCompiler=... -->
+      <!-- Inno Setup may be a per-user install (%LOCALAPPDATA%\Programs — winget/modern default) or a
+           machine install in Program Files (x86) (32-bit app's default) or 64-bit Program Files. Probe all
+           three (prefer per-user). Override with -p:InnoSetupCompiler=... -->
+      <_IsccUser>$([System.Environment]::GetFolderPath(SpecialFolder.LocalApplicationData))\Programs\Inno Setup 6\ISCC.exe</_IsccUser>
       <_IsccX86>$([System.Environment]::GetFolderPath(SpecialFolder.ProgramFilesX86))\Inno Setup 6\ISCC.exe</_IsccX86>
       <_IsccX64>$(ProgramFiles)\Inno Setup 6\ISCC.exe</_IsccX64>
+      <InnoSetupCompiler Condition="'$(InnoSetupCompiler)' == '' And Exists('$(_IsccUser)')">$(_IsccUser)</InnoSetupCompiler>
       <InnoSetupCompiler Condition="'$(InnoSetupCompiler)' == '' And Exists('$(_IsccX86)')">$(_IsccX86)</InnoSetupCompiler>
       <InnoSetupCompiler Condition="'$(InnoSetupCompiler)' == '' And Exists('$(_IsccX64)')">$(_IsccX64)</InnoSetupCompiler>
       <InnoSetupCompiler Condition="'$(InnoSetupCompiler)' == ''">$(_IsccX86)</InnoSetupCompiler>
