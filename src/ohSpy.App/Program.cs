@@ -7,16 +7,17 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        // Story 6.3 (Option 1 — truly self-contained): this app is published self-contained
+        // Story 6.3 (Option 1 — truly self-contained): the app is published self-contained
         // (csproj: WindowsPackageType=None + WindowsAppSDKSelfContained=true + SelfContained=true), so the
-        // Windows App SDK runtime + the .NET runtime ship NEXT TO the exe and are loaded directly via the
-        // app's own .deps.json / runtimeconfig. There is NO framework-dependent bootstrapper:
-        // Application.Start binds the bundled WinAppSDK runtime itself.
+        // Windows App SDK runtime + .NET ship NEXT TO the exe; Application.Start binds the bundled runtime
+        // directly — no framework-dependent bootstrapper.
         //
-        // The previous Bootstrap.TryInitialize(2.1.3 minVersion) call required an INSTALLED Windows App
-        // Runtime ≥ 2.1.3 — the opposite of self-contained — and died on a clean box with the native
-        // MessageBox "Windows App Runtime initialisation failed (0x80670016)". Removing it makes the
-        // self-contained config real (architecture amendment A32; deferred-work resolved in Story 6.3).
+        // NOTE (corrected 2026-06-08): removing Bootstrap.TryInitialize was NOT the actual install fix.
+        // The published/installed app crashed at first window because `dotnet publish` DROPPED the WinUI
+        // resources (resources.pri / compiled .xbf / Assets) — see the `_CopyWinUIResourcesToPublish`
+        // target in ohSpy.App.csproj and Amendment A32. With the resources present, this self-contained
+        // (no-bootstrap) startup renders correctly. The old Bootstrap call's 0x80670016 was a separate,
+        // dev-build red herring; bootstrap is genuinely unnecessary for a self-contained app.
 
         // CA1806 suppressed: WinUI 3's Application.Start consumes the App instance via internal
         // machinery; the lambda is the canonical Microsoft-documented startup pattern.

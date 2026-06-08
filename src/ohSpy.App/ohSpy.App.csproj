@@ -53,6 +53,27 @@
     <ProjectReference Include="..\ohSpy.Core\ohSpy.Core.csproj" />
   </ItemGroup>
 
+  <!-- ⭐ Story 6.3 — THE install fix. `dotnet publish` for this unpackaged WinUI app drops the WinUI
+       resources that the BUILD output has: the resource index (.pri), the compiled XAML (.xbf), and the
+       content Assets. Without them the published/installed app crashes at first window
+       (Microsoft.UI.Xaml.dll 0xc000027b — no resources to load App.xaml / MainWindow). The build output
+       is correct and runs; this copies those artefacts from $(OutDir) into $(PublishDir) so the published
+       app matches the build. (This — NOT the bootstrap/self-contained config — was the real install
+       blocker; see Amendment A32.) -->
+  <Target Name="_CopyWinUIResourcesToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_WinUIResource Include="$(OutDir)**\*.pri;$(OutDir)**\*.xbf" />
+      <_WinUIAsset Include="$(OutDir)Assets\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_WinUIResource)"
+          DestinationFiles="@(_WinUIResource->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_WinUIAsset)"
+          DestinationFiles="@(_WinUIAsset->'$(PublishDir)Assets\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="Copied @(_WinUIResource->Count()) WinUI resource file(s) + @(_WinUIAsset->Count()) asset(s) to the publish folder." />
+  </Target>
+
   <!--
     BuildInstaller target — depends on Publish, then invokes InnoSetup compiler.
     Documented one-liner:

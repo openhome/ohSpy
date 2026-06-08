@@ -3026,6 +3026,21 @@ The original Decision 10 established the Win32 owner relationship via `SetWindow
 
 **Date:** 2026-06-06 (Story 6.3 — the final story of Epic 6). **Commit:** _(this story)_.
 
+> ⚠️ **CORRECTION 2026-06-08 (clean-machine testing of the installer).** The diagnosis below — that the
+> `Bootstrap.TryInitialize` call was the install blocker — was **WRONG**. The installed app crashed at
+> first window (`Microsoft.UI.Xaml.dll` `0xc000027b` / `combase` `E_FAIL`) because **`dotnet publish`
+> for this unpackaged WinUI app DROPS the WinUI resources** — `resources.pri` (the resource index), the
+> compiled XAML (`.xbf`), and the content `Assets` — which the BUILD output has. With no resources the
+> XAML layer can't load `App.xaml` / `MainWindow`, so it failfasts BEFORE any window or diagnostic. This
+> was independent of bootstrap and of self-contained-vs-framework-dependent: **both** deployment modes
+> crashed identically until the resources were restored. **The actual fix** is the
+> `_CopyWinUIResourcesToPublish` MSBuild target in `ohSpy.App.csproj`, which copies `*.pri` / `*.xbf` /
+> `Assets\**` from `$(OutDir)` into `$(PublishDir)` after Publish. With that in place the self-contained
+> (no-bootstrap) Option-1 build below renders correctly. The `0x80670016` MessageBox referenced below was
+> a **dev-build** artifact (the self-contained bundle only exists after a `publish`); removing the
+> bootstrap call is still correct for a self-contained app, but it was not what unblocked the install.
+> **Clean-Win11-box launch remains the Project Lead's pending verification gate.**
+
 **The error being corrected:** Decision 12 (L1641) claimed *"a self-contained publish bundles the Windows App Runtime alongside the EXE; `Bootstrap.TryInitialize` finds the bundled runtime and binds to it."* That sentence is **wrong**, and the shipped `Program.cs` (from Story 1.1, codified by Amendment A7) acted on it: `Program.Main` unconditionally called the **framework-dependent** `Bootstrap.TryInitialize(0x00020001, "", minVersion 2.1.3.0, …)`. The bootstrapper looks for a **centrally-installed** Windows App Runtime — it never binds the self-contained sibling laid down next to the exe. Self-contained (`WindowsAppSDKSelfContained=true` + `SelfContained=true`) and the bootstrapper are **mutually exclusive**, so the self-contained config was a **startup no-op** and a clean Win11 box (no installed runtime ≥ 2.1.3) died at the native MessageBox **`Windows App Runtime initialisation failed (0x80670016)`** — `Program.Main`'s own failure dialog. This blocked AC-12.4 ("app launches on a clean box") and the Story 6.3 install dry-run.
 
 **The fix (Option 1 — truly self-contained, the Project-Lead decision):** the `Bootstrap.TryInitialize` / `Bootstrap.Shutdown` calls, the `0x80670016` `MessageBoxW` failure path, the `PackageVersion minVersion`, and the `Microsoft.Windows.ApplicationModel.DynamicDependency` / `MessageBoxW` P/Invoke plumbing are **removed** from `Program.cs`. The csproj self-contained flags are **retained** (they become real, not a no-op). `Application.Start(_ => new App())` now loads the bundled WinAppSDK runtime **directly** via the app's own `.deps.json` / `runtimeconfig.json` — no bootstrapper, no runtime-version coupling. A `dotnet publish -r win-x64 --self-contained` lays the WinAppSDK native runtime (`Microsoft.ui.xaml.dll`, `CoreMessagingXP.dll`, `DWriteCore.dll`, `Microsoft.WindowsAppRuntime.dll`, `MRM.dll`, `dwmcorei.dll`, `Microsoft.Internal.FrameworkUdk.dll`, …) **and** the .NET runtime (`coreclr.dll`, `clrjit.dll`, `System.Private.CoreLib.dll`, `hostfxr/hostpolicy`) beside `ohSpy.App.exe` (`runtimeconfig.json` carries `includedFrameworks`, the self-contained marker). No prerequisite installer, no Admin (AC-12.3 + AC-12.4).
