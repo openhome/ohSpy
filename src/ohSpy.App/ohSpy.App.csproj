@@ -67,8 +67,10 @@
        blocker; see Amendment A32.) -->
   <Target Name="_CopyWinUIResourcesToPublish" AfterTargets="Publish">
     <ItemGroup>
-      <_WinUIResource Include="$(OutDir)**\*.pri;$(OutDir)**\*.xbf" />
-      <_WinUIAsset Include="$(OutDir)Assets\**\*.*" />
+      <!-- Exclude $(PublishDir) (a subdir of $(OutDir)) so a second BuildInstaller run doesn't re-match
+           the files this target already copied into publish\ and recurse them into publish\publish\... -->
+      <_WinUIResource Include="$(OutDir)**\*.pri;$(OutDir)**\*.xbf" Exclude="$(PublishDir)**\*.*" />
+      <_WinUIAsset Include="$(OutDir)Assets\**\*.*" Exclude="$(PublishDir)**\*.*" />
     </ItemGroup>
     <Copy SourceFiles="@(_WinUIResource)"
           DestinationFiles="@(_WinUIResource->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')"

@@ -42,6 +42,14 @@ UninstallDisplayIcon={app}\{#AppExeName}
 ; Gives the generated setup.exe its own icon; installed shortcuts inherit the exe's embedded icon.
 SetupIconFile={#PublishDir}\Assets\AppIcon.ico
 WizardStyle=modern
+; "Preparing to Install" hang fix. The self-contained WinUI/.NET payload is ~278 files; Inno's default
+; CloseApplications=yes registers EVERY *.exe/*.dll with the Restart Manager and runs RmGetList against
+; all running processes for the whole set. On an upgrade (existing {app} files present) with aggressive
+; AV / cold cache, that scan can stall for minutes — presenting as a hang on the "Preparing to Install"
+; page (confirmed via /LOG: the only work at that stage is "Found 278 files... RmGetList"). Only
+; ohSpy.App.exe's in-use state actually matters — closing the app releases its DLLs too — so narrow the
+; RM scan to it. Keeps the close-the-running-app safety on upgrade without the all-files scan.
+CloseApplicationsFilter=ohSpy.App.exe
 
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
