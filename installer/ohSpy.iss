@@ -38,6 +38,9 @@ SolidCompression=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#AppExeName}
+; The "Oh" icon, published alongside the app (Assets\AppIcon.ico via _CopyWinUIResourcesToPublish).
+; Gives the generated setup.exe its own icon; installed shortcuts inherit the exe's embedded icon.
+SetupIconFile={#PublishDir}\Assets\AppIcon.ico
 WizardStyle=modern
 
 [Files]
