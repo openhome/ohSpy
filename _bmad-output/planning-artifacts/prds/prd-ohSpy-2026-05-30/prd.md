@@ -118,6 +118,14 @@ Devices are uniquely identified by the UUID in the `USN` header (defined in the 
 
 On receiving an SSDP NOTIFY with `NTS: ssdp:byebye` (UDA 1.0 §1.1.3) for a known device, ohSpy removes that device from the registry and (if visible) from the tree.
 
+#### FR-056: Removal on expiry (inferred byebye)
+
+A registered device whose latest `ssdp:alive` promised a `CACHE-CONTROL: max-age` lease MUST be removed from the registry (and tree) when that lease lapses without a refreshing `alive` — i.e. when `now > LastSeenUtc + max-age` — even though no `ssdp:byebye` was received (UDA 1.0 §1.2.2: a device re-advertises before its `max-age` expires; absence implies it has left). Removal uses the same path as FR-008 (byebye): the device leaves the registry + tree, open popups receive the FR-037 "device no longer reachable" treatment, and any in-flight description/SCPD fetch is cancelled.
+- **Grace:** eviction occurs at `LastSeenUtc + max-age` plus a small fixed jitter tolerance (`~5 s`) for network/routing latency and clock skew (a device promises to re-advertise within that window; UDA recommends `< ½ max-age`, but eviction at `1× max-age` is the conservative, spec-faithful control-point bound).
+- **Missing `CACHE-CONTROL`:** when an `alive` omits `max-age` (non-conformant but seen in the wild), a default lease of `1800 s` (the UDA 1.0 §1.2.2 example) applies so the device still expires rather than living forever.
+- **Diagnostic:** an expiry emits a distinct `Ssdp.Expired` diagnostic (Information) carrying the device UDN, so the FR-041 Diagnostics viewer shows *why* a device left.
+- The check is periodic and MUST NOT block the SSDP read loop, the GENA listener, or the UI thread; the eviction is marshalled onto the UI thread (the registry is UI-thread-owned).
+
 #### FR-053: Root-only registration with three-layer enforcement
 
 The registry contains **only root UPnP devices**. Embedded children and standalone services MUST NOT appear as separate registry entries. Services declared by embedded children flatten into their root device's `<serviceList>`. Enforcement:

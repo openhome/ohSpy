@@ -49,4 +49,25 @@ public interface IDeviceRegistry
     /// entries pruned. Safe (returns 0) on an empty registry.
     /// </summary>
     int PruneNotSeenSince(DateTime epochUtc);
+
+    /// <summary>
+    /// FR-056 / Amendment A33 expiry sweep — the AUTOMATIC per-entry-lease cousin of
+    /// <see cref="PruneNotSeenSince"/> (which keys on a single global epoch; this keys on each entry's
+    /// own <c>CACHE-CONTROL</c> lease). Removes every entry whose lease has lapsed without a refreshing
+    /// alive — i.e. <paramref name="nowUtc"/> is past <see cref="RegistryEntry.LastSeenUtc"/> + lease +
+    /// <paramref name="jitter"/>, where lease = <see cref="RegistryEntry.CacheControlMaxAge"/> (or
+    /// <paramref name="defaultLease"/> when the latest alive omitted <c>max-age</c>). Runs on the UI
+    /// thread: like <see cref="Clear"/> / <see cref="PruneNotSeenSince"/> it snapshots the current UDNs
+    /// FIRST, then removes each expired one via the shared byebye-identical cascade (cancel + dispose its
+    /// <c>DeviceCts</c> and raise <see cref="DeviceRemoved"/> per UDN — so the tree drops the row, open
+    /// popups flip to their FR-037 device-gone banners, and any in-flight description/SCPD fetch is
+    /// cancelled). A refreshing alive bumped <c>LastSeenUtc</c> (via <c>OnAlive</c>) so a live device
+    /// survives. Idempotent with byebye / Rescan / Clear (shared <c>RemoveCore.TryRemove</c> — an
+    /// already-removed UDN raises no second <see cref="DeviceRemoved"/>). Returns the evicted devices —
+    /// each UDN with the <c>CACHE-CONTROL</c> max-age it had advertised (null when it relied on the
+    /// default lease) — so the caller can emit one per-device-accurate <c>Ssdp.Expired</c> diagnostic;
+    /// empty on an empty registry. The <paramref name="nowUtc"/> is supplied by the caller (the registry
+    /// holds no clock — it stays pure + instantly testable).
+    /// </summary>
+    IReadOnlyList<(string Udn, TimeSpan? MaxAge)> ExpireOlderThan(DateTime nowUtc, TimeSpan defaultLease, TimeSpan jitter);
 }

@@ -103,6 +103,21 @@ public sealed class RegistryEntry
     }
 
     /// <summary>
+    /// FR-056 (Amendment A33): true iff this entry's <c>CACHE-CONTROL</c> lease has lapsed without a
+    /// refreshing alive — i.e. <paramref name="nowUtc"/> is past <see cref="LastSeenUtc"/> + lease +
+    /// <paramref name="jitter"/>, where lease = <see cref="CacheControlMaxAge"/> (or
+    /// <paramref name="defaultLease"/> when the latest alive omitted <c>max-age</c>; non-conformant but
+    /// seen in the wild). The <paramref name="jitter"/> is a small fixed tolerance absorbing routing
+    /// latency + clock skew so a device re-advertising right at its lease edge is not evicted spuriously.
+    /// Pure (takes <paramref name="nowUtc"/> as a parameter — no clock inside the registry).
+    /// </summary>
+    internal bool IsExpiredAt(DateTime nowUtc, TimeSpan defaultLease, TimeSpan jitter)
+    {
+        var lease = CacheControlMaxAge ?? defaultLease;
+        return nowUtc > LastSeenUtc + lease + jitter;
+    }
+
+    /// <summary>
     /// Updates liveness + SSDP metadata on a subsequent alive (AC-9.4). Does NOT change
     /// <see cref="State"/> and triggers NO re-fetch (FR-043 cache invariant).
     /// </summary>

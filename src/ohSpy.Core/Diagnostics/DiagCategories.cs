@@ -30,6 +30,16 @@ public static class DiagCategories
     /// </summary>
     public const string SsdpSearchObserved = "Ssdp.SearchObserved";
 
+    /// <summary>
+    /// FR-056 / Amendment A33 (Story 2.11): a device was evicted by the periodic expiry sweep —
+    /// its <c>CACHE-CONTROL: max-age</c> lease lapsed without a refreshing <c>ssdp:alive</c> (inferred
+    /// byebye, UDA 1.0 §1.2.2). Information severity. Distinct from byebye (FR-008 emits no diagnostic),
+    /// Rescan (<see cref="Rescan"/>), and adapter-switch (<see cref="AdapterSwitch"/>) so the operator
+    /// sees in the FR-041 viewer *why* a device left. Mandatory context: DeviceUuid (the UDN);
+    /// ErrorText carries the lease/grace reason (e.g. <c>"no alive in 1800s lease (+5s grace)"</c>).
+    /// </summary>
+    public const string SsdpExpired = "Ssdp.Expired";
+
     /// <summary>Mandatory context: (none beyond message).</summary>
     public const string SsdpChannelNearFull = "Ssdp.Channel.NearFull";
 

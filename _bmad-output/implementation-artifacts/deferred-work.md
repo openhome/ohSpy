@@ -1,5 +1,9 @@
 # Deferred Work
 
+## Deferred from: code review of 2-11-ssdp-maxage-expiry-inferred-byebye (2026-06-11)
+
+- **Pre-existing — `DiscoveryService.DisposeAsync` has no idempotency guard** [`src/ohSpy.Core/Discovery/DiscoveryService.cs:124`] — double-dispose re-awaits the already-completed `_readLoop` and `_sweepLoop` Tasks and calls `StopSweep()` a second time (which is a no-op after `_sweepCts` is nulled). No observable crash (re-awaiting a completed Task is safe; `StopSweep` null-checks `_sweepCts`), but not idempotent by intent. Pre-existing gap; the read loop had the same issue before Story 2.11. Fix: add a `_disposed` Interlocked guard (like `AdapterScope.DisposeAsync`) when lifecycle robustness is hardened.
+
 ## Deferred from: code review of 6-3-performance-budget-verification-clean-machine-install-dry-run (2026-06-06)
 
 - **Pre-existing — No exception handling around `Application.Start`** [`src/ohSpy.App/Program.cs:23-25`] — `Application.Start(_ => new App())` is called without a surrounding `try/catch`. If the WinUI XAML runtime throws during startup, the unhandled exception propagates to the OS. Pre-existing behavior (the old `try/finally` only called `Bootstrap.Shutdown` in finally; it did not catch exceptions). Not introduced by Story 6.3.

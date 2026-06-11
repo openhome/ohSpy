@@ -296,6 +296,162 @@ public sealed class DeviceRegistryTests
         registry.Count.Should().Be(0);
     }
 
+    // ─── Story 2.11 / FR-056: ExpireOlderThan (the automatic per-entry-lease expiry sweep) ──────────
+
+    private static readonly TimeSpan DefaultLease = TimeSpan.FromSeconds(1800);
+    private static readonly TimeSpan Jitter = TimeSpan.FromSeconds(5);
+
+    [Fact]
+    [Trait("fr", "FR-056")]
+    public void ExpireOlderThan_DevicePastItsLease_EvictedWithByebyeCascade_FR056()
+    {
+        var registry = NewRegistry();
+        var removed = new List<string>();
+        registry.DeviceRemoved += removed.Add;
+        var udn = NewUdn();
+
+        var lastSeen = DateTime.UtcNow;
+        var lease = TimeSpan.FromSeconds(100);
+        registry.OnAlive(udn, Location, lastSeen, "S", lease, null, null, CancellationToken.None);
+        registry.TryGetEntry(udn, out var entry);
+
+        // now is past LastSeenUtc + lease + jitter → expired.
+        var now = lastSeen + lease + Jitter + TimeSpan.FromSeconds(1);
+        var evicted = registry.ExpireOlderThan(now, DefaultLease, Jitter);
+
+        evicted.Select(e => e.Udn).Should().BeEquivalentTo(new[] { udn }, "the device past its lease is evicted, UDN returned");
+        evicted.Single().MaxAge.Should().Be(lease, "the evicted device's advertised max-age is returned for the per-device diagnostic");
+        removed.Should().ContainSingle().Which.Should().Be(udn, "byebye-identical cascade raises DeviceRemoved");
+        entry.DeviceToken.IsCancellationRequested.Should().BeTrue("the evicted entry's DeviceCts is cancelled (AC-7.2)");
+        registry.Count.Should().Be(0);
+    }
+
+    [Fact]
+    [Trait("fr", "FR-056")]
+    public void ExpireOlderThan_RefreshedEntry_ResetsLease_Survives_FR056()
+    {
+        var registry = NewRegistry();
+        var udn = NewUdn();
+        var lease = TimeSpan.FromSeconds(100);
+
+        var firstSeen = DateTime.UtcNow;
+        registry.OnAlive(udn, Location, firstSeen, "S", lease, null, null, CancellationToken.None);
+
+        // A refreshing alive bumps LastSeenUtc to a later time (the device re-advertised within its lease).
+        var refreshedAt = firstSeen + TimeSpan.FromSeconds(90);
+        registry.OnAlive(udn, Location, refreshedAt, "S", lease, null, null, CancellationToken.None);
+
+        // "now" would have expired the ORIGINAL lease but not the refreshed one.
+        var now = firstSeen + lease + Jitter + TimeSpan.FromSeconds(1);
+        var evicted = registry.ExpireOlderThan(now, DefaultLease, Jitter);
+
+        evicted.Should().BeEmpty("the refresh reset the lease (now ≤ refreshedAt + lease + jitter)");
+        registry.Count.Should().Be(1, "a re-advertising device survives the sweep");
+    }
+
+    [Fact]
+    [Trait("fr", "FR-056")]
+    public void ExpireOlderThan_NullMaxAge_UsesDefaultLease_FR056()
+    {
+        var registry = NewRegistry();
+        var udn = NewUdn();
+
+        var lastSeen = DateTime.UtcNow;
+        registry.OnAlive(udn, Location, lastSeen, "S", maxAge: null, null, null, CancellationToken.None);
+
+        // Just inside the default lease → survives.
+        var withinDefault = lastSeen + DefaultLease; // == lease edge, not yet past lease + jitter
+        registry.ExpireOlderThan(withinDefault, DefaultLease, Jitter).Should().BeEmpty(
+            "a null max-age entry survives within the 1800s default lease");
+
+        // Past the default lease + jitter → evicted.
+        var pastDefault = lastSeen + DefaultLease + Jitter + TimeSpan.FromSeconds(1);
+        var evictedDefault = registry.ExpireOlderThan(pastDefault, DefaultLease, Jitter);
+        evictedDefault.Select(e => e.Udn).Should().BeEquivalentTo(new[] { udn },
+            "a null max-age entry still expires via the default lease (never lives forever)");
+        evictedDefault.Single().MaxAge.Should().BeNull("a device that advertised no CACHE-CONTROL returns a null max-age");
+        registry.Count.Should().Be(0);
+    }
+
+    [Fact]
+    [Trait("fr", "FR-056")]
+    public void ExpireOlderThan_JitterEdge_JustInsideSurvives_JustPastEvicts_FR056()
+    {
+        var registry = NewRegistry();
+        var udn = NewUdn();
+        var lease = TimeSpan.FromSeconds(100);
+        var lastSeen = DateTime.UtcNow;
+        registry.OnAlive(udn, Location, lastSeen, "S", lease, null, null, CancellationToken.None);
+
+        // Exactly at LastSeenUtc + lease + jitter → NOT past (strict >) → survives.
+        var atEdge = lastSeen + lease + Jitter;
+        registry.ExpireOlderThan(atEdge, DefaultLease, Jitter).Should().BeEmpty(
+            "the device at the exact lease+jitter edge survives (strict > comparison)");
+        registry.Count.Should().Be(1);
+
+        // One tick past the edge → evicted.
+        var pastEdge = atEdge + TimeSpan.FromTicks(1);
+        registry.ExpireOlderThan(pastEdge, DefaultLease, Jitter).Select(e => e.Udn).Should().BeEquivalentTo(new[] { udn });
+        registry.Count.Should().Be(0);
+    }
+
+    [Fact]
+    [Trait("fr", "FR-056")]
+    public void ExpireOlderThan_IsIdempotent_NoDoubleRemoved_FR056()
+    {
+        var registry = NewRegistry();
+        var removed = new List<string>();
+        registry.DeviceRemoved += removed.Add;
+        var udn = NewUdn();
+        var lease = TimeSpan.FromSeconds(100);
+        var lastSeen = DateTime.UtcNow;
+        registry.OnAlive(udn, Location, lastSeen, "S", lease, null, null, CancellationToken.None);
+
+        var now = lastSeen + lease + Jitter + TimeSpan.FromSeconds(1);
+        registry.ExpireOlderThan(now, DefaultLease, Jitter).Select(e => e.Udn).Should().BeEquivalentTo(new[] { udn });
+        registry.ExpireOlderThan(now, DefaultLease, Jitter).Should().BeEmpty(
+            "second sweep finds nothing — no double DeviceRemoved (shared RemoveCore.TryRemove)");
+
+        removed.Should().ContainSingle().Which.Should().Be(udn);
+        registry.Count.Should().Be(0);
+    }
+
+    [Fact]
+    [Trait("fr", "FR-056")]
+    public void ExpireOlderThan_EmptyRegistry_ReturnsEmpty_FR056()
+    {
+        var registry = NewRegistry();
+        var removed = new List<string>();
+        registry.DeviceRemoved += removed.Add;
+
+        registry.ExpireOlderThan(DateTime.UtcNow, DefaultLease, Jitter).Should().BeEmpty();
+
+        removed.Should().BeEmpty();
+        registry.Count.Should().Be(0);
+    }
+
+    [Fact]
+    [Trait("fr", "FR-056")]
+    public void ExpireOlderThan_OnlyExpiredEvicted_LiveDevicesSurvive_FR056()
+    {
+        var registry = NewRegistry();
+        var lease = TimeSpan.FromSeconds(100);
+        var baseTime = DateTime.UtcNow;
+
+        var stale = NewUdn();
+        var live = NewUdn();
+        registry.OnAlive(stale, Location, baseTime, "S", lease, null, null, CancellationToken.None);
+        registry.OnAlive(live, Location, baseTime + TimeSpan.FromSeconds(80), "S", lease, null, null, CancellationToken.None);
+
+        // now expires `stale` (seen at baseTime) but not `live` (seen 80s later).
+        var now = baseTime + lease + Jitter + TimeSpan.FromSeconds(1);
+        var evicted = registry.ExpireOlderThan(now, DefaultLease, Jitter);
+
+        evicted.Select(e => e.Udn).Should().BeEquivalentTo(new[] { stale }, "only the entry past its lease is evicted");
+        registry.Count.Should().Be(1);
+        registry.TryGetEntry(live, out _).Should().BeTrue("the live device survives");
+    }
+
     [Fact]
     public void RaiseDeviceUpdated_FiresEvent()
     {

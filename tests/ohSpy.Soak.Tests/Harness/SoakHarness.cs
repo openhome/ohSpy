@@ -111,7 +111,7 @@ internal sealed class SoakHarness : IAsyncDisposable
         _eagerDispatcher = new EagerDescriptionDispatcher(_http, descParser, _ui, _registry, _emitter);
 
         var ssdpParser = new SsdpParser(_emitter);
-        _discovery = new DiscoveryService(_registry, ssdpParser, _ui);
+        _discovery = new DiscoveryService(_registry, ssdpParser, _ui, _emitter);
 
         // ── Real subscription client + callback-host factory ──
         _subscriptionClient = new SubscriptionClient(_http, _emitter);

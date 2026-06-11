@@ -144,6 +144,36 @@ internal sealed class DeviceRegistry(IUiDispatcher ui) : IDeviceRegistry
         return pruned;
     }
 
+    /// <summary>
+    /// FR-056 / Amendment A33 expiry sweep — the automatic per-entry-lease cousin of
+    /// <see cref="PruneNotSeenSince"/>. Removes every entry past its <c>CACHE-CONTROL</c> lease
+    /// (<see cref="RegistryEntry.IsExpiredAt"/>) via the shared <see cref="RemoveCore"/> cascade
+    /// (byebye-identical), returning the evicted UDNs so <c>DiscoveryService</c> can emit one
+    /// <c>Ssdp.Expired</c> diagnostic per device. Snapshots the UDNs FIRST (same rationale as
+    /// <see cref="Clear"/>/<see cref="PruneNotSeenSince"/>: a <see cref="DeviceRemoved"/> handler may
+    /// re-read the registry, and we never iterate a collection we mutate). Evaluates the predicate
+    /// against the LIVE entry at removal time so a refresh that landed after the snapshot is respected.
+    /// Idempotent; empty on an empty registry.
+    /// </summary>
+    public IReadOnlyList<(string Udn, TimeSpan? MaxAge)> ExpireOlderThan(DateTime nowUtc, TimeSpan defaultLease, TimeSpan jitter)
+    {
+        ui.AssertOnUiThread();
+
+        var udns = _entries.Keys.ToArray();
+        var evicted = new List<(string Udn, TimeSpan? MaxAge)>();
+        foreach (var udn in udns)
+        {
+            if (_entries.TryGetValue(udn, out var entry) && entry.IsExpiredAt(nowUtc, defaultLease, jitter))
+            {
+                var advertisedMaxAge = entry.CacheControlMaxAge; // capture BEFORE removal for the per-device diagnostic
+                RemoveCore(udn); // cancel + dispose DeviceCts + raise DeviceRemoved (byebye-identical)
+                evicted.Add((udn, advertisedMaxAge));
+            }
+        }
+
+        return evicted;
+    }
+
     private void RemoveCore(string udn)
     {
         if (_entries.TryRemove(udn, out var entry))

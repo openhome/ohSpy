@@ -1007,6 +1007,7 @@ public static class DiagCategories
     public const string HttpOversizeBody         = "Http.OversizeBody";
     public const string SsdpParse                = "Ssdp.Parse";               // + ErrorText reason (Story 5.1 smoke)
     public const string SsdpSearchObserved       = "Ssdp.SearchObserved";       // Verbose: received M-SEARCH request (Story 5.1 smoke)
+    public const string SsdpExpired              = "Ssdp.Expired";              // Information: max-age lease lapsed → inferred byebye (FR-056 / A33, Story 2.11)
     public const string SsdpChannelNearFull      = "Ssdp.Channel.NearFull";
     public const string SsdpChannelOverflow      = "Ssdp.Channel.Overflow";
     public const string DescriptionFetch         = "Description.Fetch";
@@ -1929,6 +1930,7 @@ Mandatory fields per category family (downstream agents follow this table; devia
 | `Gena.Callback.*` | `RemoteEndpoint` (`DeviceUuid` not yet known) |
 | `Gena.Notify.Received` | `Sid` |
 | `Ssdp.Parse` | `RemoteEndpoint` |
+| `Ssdp.Expired` | `DeviceUuid`; `ErrorText` (the lease/grace reason) — FR-056 / A33 |
 | `Ssdp.Channel.*` | (none beyond message) |
 | `Adapter.Switch.*` | (none beyond message) |
 | `Adapter.Rescan` | (none beyond message; `ErrorText` on a rescan failure) |
@@ -3048,6 +3050,24 @@ The original Decision 10 established the Win32 owner relationship via `SetWindow
 **Rejected alternative (Option 2 — framework-dependent):** keep `Bootstrap.TryInitialize`, drop the self-contained flags, and make the InnoSetup installer carry + run `WindowsAppRuntimeInstall-x64.exe` (≥ 2.1.3) as a prerequisite. Rejected: larger installer change, a per-machine runtime install step (possible elevation), and it re-introduces the runtime-version coupling that produced `0x80670016`.
 
 **Supersedes:** the L1641 "bootstrapper finds the bundled runtime" sentence; the framework-dependent intent of **Amendment A7** (A7's *signature* documentation remains historically accurate, but the call it documents is now removed). The `installer/ohSpy.iss` `[Files] Source: "{#PublishDir}\*"` payload becomes a genuinely runnable self-contained bundle as a consequence (no `.iss` change required). **Applied to:** `src/ohSpy.App/Program.cs` (App only). No Core change (Core suite 553/2 unchanged); App `-warnaserror` 0/0 bar the pre-existing benign WMC1506. Resolves the `deferred-work.md` "bootstrap ↔ self-contained contradiction" entry (2026-06-03).
+
+---
+
+### Amendment A33 — DiscoveryService periodic expiry sweep (inferred byebye; Decision 9 / DiscoveryService-lifecycle refinement)
+
+**Source:** Sprint Change Proposal 2026-06-11 (correct-course); surfaced in real-world use — a device pulled off the network WITHOUT `ssdp:byebye` was never removed (FR-008 is byebye-only). Authored in Story 2.11. Implements PRD FR-056.
+
+**The gap:** `CACHE-CONTROL: max-age` is parsed (`SsdpParser.ParseMaxAge`) and stored (`SsdpAnnouncement.CacheControlMaxAge` → `RegistryEntry.CacheControlMaxAge` + `LastSeenUtc`, refreshed by `RefreshSsdpMetadata` on every alive), but nothing evicts on it. The only removal paths were `DeviceRegistry.OnByebye` (FR-008), the manual `PruneNotSeenSince` (Story 5.3 Rescan), and `Clear()` (Story 5.2 adapter switch). Standard UDA §1.2.2 expiry (a device re-advertises before its `max-age`; absence implies it left) was never required.
+
+**The amendment:** the registry gains an automatic **expiry sweep** — a periodic, UI-thread-marshalled eviction of entries past their `CACHE-CONTROL` lease, reusing the existing `RemoveCore` cascade (cancel + dispose `DeviceCts`, raise `DeviceRemoved` per UDN — byebye-identical, so the FR-037 popup banners + in-flight-fetch cancellation just work). It is the AUTOMATIC per-entry-lease cousin of Story 5.3's manual `PruneNotSeenSince`.
+- **Owner:** the singleton `DiscoveryService` (it already ctor-injects `DeviceRegistry` + `IUiDispatcher` and owns the per-adapter read-loop lifecycle). The sweep loop is a second `Task.Run` started alongside the read loop in `StartAsync`, re-started by `RebindAsync`, and drained in `DisposeAsync` — bound to the same adapter token, so it STOPS on adapter switch / teardown (no eviction against a torn-down/replaced registry).
+- **Lease / grace:** lease = `RegistryEntry.CacheControlMaxAge ?? 1800 s` (the UDA §1.2.2 default for non-conformant devices that omit `CACHE-CONTROL`); evict when `now > LastSeenUtc + lease + ~5 s` jitter. `1× max-age` (not `½`) is the conservative control-point bound.
+- **Registry method:** a NEW `IDeviceRegistry.ExpireOlderThan(nowUtc, defaultLease, jitter)` (NOT a generalisation of `PruneNotSeenSince`, which keys on a single global epoch — expiry needs a per-entry lease). Same structure as `PruneNotSeenSince`: `AssertOnUiThread`, snapshot keys first, `RemoveCore` per expired entry, return the evicted UDNs / count. Idempotent with byebye / Rescan / Clear (shared `RemoveCore.TryRemove`).
+- **Marshalling (Action H / `winui-no-synccontext-marshal-vm`):** the sweep runs on a timer thread; `now` is read off-thread, then `IUiDispatcher.Post` marshals `ExpireOlderThan` onto the UI thread (the registry is UI-thread-owned — `AssertOnUiThread`). Proven by a `DeferredUiDispatcher` guard test.
+- **Test seam:** a `Func<DateTime>` clock + a `Func<TimeSpan,CancellationToken,Task>` delay + a settable interval are injected into `DiscoveryService` (defaulted to `DateTime.UtcNow` / `Task.Delay` / 30 s) — the `SubscriptionClient._delay` / `ShellViewModel._rescanDelay` precedent — so the sweep is unit-testable instantly with no real waits. `ExpireOlderThan` takes `nowUtc` as a parameter (no clock inside the registry — it stays pure).
+- **Diagnostic:** a NEW `DiagCategories.SsdpExpired = "Ssdp.Expired"` (Information; context: DeviceUuid; ErrorText = the lease/grace reason). Pinned-set change — added to `DiagCategories.cs`, `DiagCategoriesTests.expectedNames`, and this Decision-8 / Pattern-11 list together (the 5.1 `SsdpSearchObserved` / 5.3 `Rescan` precedent). Emitted from `DiscoveryService` (not the registry — the registry deliberately has no `IDiagnosticEmitter` dependency, to avoid the Emitter→RingSink→IdentityLookup→Registry cycle).
+
+**Applied to:** `DiscoveryService` (sweep loop + clock/delay/interval seams + the `SsdpExpired` emit + `IDiagnosticEmitter` ctor dep), `DeviceRegistry`/`IDeviceRegistry` (`ExpireOlderThan`), `RegistryEntry` (the per-entry expiry predicate; `CacheControlMaxAge` + `LastSeenUtc` already present), `DiagCategories` (+ the test exact-set). PURE CORE — no App change (the sweep starts via the already-wired `DiscoveryService.StartAsync`/`RebindAsync`).
 
 ---
 

@@ -29,4 +29,8 @@ internal sealed class FakeDeviceRegistry : IDeviceRegistry
 
     // Story 5.3: inert prune (this fake holds no entries). Returns 0 — nothing to prune.
     public int PruneNotSeenSince(DateTime epochUtc) => 0;
+
+    // Story 2.11 / FR-056: inert expiry sweep (this fake holds no entries). Returns empty — nothing evicted.
+    public IReadOnlyList<(string Udn, TimeSpan? MaxAge)> ExpireOlderThan(DateTime nowUtc, TimeSpan defaultLease, TimeSpan jitter) =>
+        Array.Empty<(string, TimeSpan?)>();
 }

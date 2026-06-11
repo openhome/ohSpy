@@ -66,7 +66,7 @@ public sealed class ShellViewModelTests
         var diag = new CapturingDiagnosticEmitter();
         var registry = new DeviceRegistry(ui);
         var parser = new SsdpParser(diag);
-        var discovery = new DiscoveryService(registry, parser, ui);
+        var discovery = new DiscoveryService(registry, parser, ui, diag);
         var subClient = new FakeSubscriptionClient();
         var enumerator = new StubAdapterEnumerator(adapters.Length == 0 ? new[] { AdapterA, AdapterB } : adapters);
 
@@ -111,7 +111,7 @@ public sealed class ShellViewModelTests
         var diag = new CapturingDiagnosticEmitter();
         var registry = new DeviceRegistry(ui);
         var parser = new SsdpParser(diag);
-        var discovery = new DiscoveryService(registry, parser, ui);
+        var discovery = new DiscoveryService(registry, parser, ui, diag);
         var subClient = new FakeSubscriptionClient();
         var enumerator = new StubAdapterEnumerator(Array.Empty<NetworkAdapter>());
         var transports = new TaggedFactory<RecordingSsdpTransport>(
