@@ -557,6 +557,18 @@ When the user selects a different adapter (FR-048), ohSpy MUST atomically:
 **Consequences (testable):**
 - The adapter switch completes within the discovery budget (Performance Budgets §6) and MUST NOT block the UI thread.
 
+#### FR-057: Rebind on host network change
+
+When the host's network changes while ohSpy is running — the bound adapter's IPv4 address changes, or the adapter is removed/disabled (e.g. moving the PC between networks) — ohSpy MUST detect the change and rebind: re-enumerate eligible adapters (FR-048) and, if the currently-bound adapter is no longer eligible, atomically rebind to the best available adapter (the FR-050 sequence) or, if none is eligible, tear down to the zero-adapter state (NFR-R5). Devices from the now-unreachable network are cleared as part of the rebind. The detection MUST debounce the burst of OS notifications a transition produces, and MUST NOT require an operator to manually re-pick the adapter.
+
+- **Detection:** subscribe to `System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged` (via a test-fakeable Core seam). The event fires on a non-UI thread; all observable-state mutation is marshalled onto the UI thread.
+- **Debounce:** a network transition produces a rapid burst of notifications; ohSpy debounces (trailing-edge, ~2 s) so a single rebind evaluation runs once the burst settles.
+- **Auto-target:** rebind to the first eligible adapter (the FR-048 launch-default) — no operator prompt. The operator may still override via `View → Network adapter` (FR-048).
+- **No-op:** if the bound adapter is still eligible with an unchanged IPv4 (a different NIC changed, or a transient blip), ohSpy does nothing.
+- **Re-entrancy:** the auto-rebind shares the FR-050 switch's re-entrancy guard with the manual switch — the two never run concurrently.
+- **Diagnostic:** a network-triggered rebind emits a distinct `Adapter.NetworkChanged` diagnostic (Information) carrying old → new adapter IPv4, so the FR-041 Diagnostics viewer shows the rebind was network-triggered.
+- **Backstop:** with FR-056 (expiry) in place, stale devices also age out if a rebind target is not found; FR-057 is the responsive fix, FR-056 the safety net.
+
 ---
 
 ### 4.12 Diagnostics

@@ -137,7 +137,7 @@ internal sealed class SoakHarness : IAsyncDisposable
         Shell = new ShellViewModel(
             enumerator, transportFactory, hostFactory,
             _discovery, _subscriptionClient, _registry, _ui, _emitter,
-            new NoOpDiagnosticsLauncher(), nodeServices);
+            new NoOpDiagnosticsLauncher(), new InertNetworkChangeNotifier(), nodeServices);
 
         _ssdpLog = Shell.SsdpLog; // the app-lifetime SSDP log (subscribes to AnnouncementReceived)
         _diagnostics = new DiagnosticsViewModel(_ringSink, _gate);
@@ -267,4 +267,16 @@ internal sealed class SoakHarness : IAsyncDisposable
 internal sealed class SoakAdapterEnumerator(params NetworkAdapter[] adapters) : INetworkAdapterEnumerator
 {
     public IReadOnlyList<NetworkAdapter> Enumerate() => adapters;
+}
+
+/// <summary>FR-057 (Story 2.12): inert <see cref="INetworkChangeNotifier"/> for the soak — never raises a
+/// network-change event (the soak does not exercise adapter loss). Satisfies the ShellViewModel ctor.</summary>
+internal sealed class InertNetworkChangeNotifier : INetworkChangeNotifier
+{
+    // Never raised (the soak does not simulate a host network change); the add/remove accessors satisfy
+    // the interface and let ShellViewModel subscribe/unsubscribe without effect.
+#pragma warning disable CS0067 // event is declared but never used (intentional — inert fake)
+    public event EventHandler? NetworkAddressChanged;
+#pragma warning restore CS0067
+    public void Dispose() { }
 }

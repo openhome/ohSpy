@@ -147,10 +147,21 @@ internal sealed class RecordingCallbackHost : IEventCallbackHost
     internal bool HasSubscriber => NotifyReceived is not null;
 }
 
-/// <summary>Controllable <see cref="INetworkAdapterEnumerator"/> returning a fixed adapter list.</summary>
-internal sealed class StubAdapterEnumerator(params NetworkAdapter[] adapters) : INetworkAdapterEnumerator
+/// <summary>
+/// Controllable <see cref="INetworkAdapterEnumerator"/>. Seeded with an initial adapter list; a test can
+/// MUTATE it via <see cref="SetAdapters"/> between calls so the Story 2.12 (FR-057) network-change tests
+/// can flip the eligible set (A → [B], A → []) to simulate a host network move and assert the re-enumerate.
+/// </summary>
+internal sealed class StubAdapterEnumerator : INetworkAdapterEnumerator
 {
-    public IReadOnlyList<NetworkAdapter> Enumerate() => adapters;
+    private volatile NetworkAdapter[] _adapters;
+
+    public StubAdapterEnumerator(params NetworkAdapter[] adapters) => _adapters = adapters;
+
+    public IReadOnlyList<NetworkAdapter> Enumerate() => _adapters;
+
+    /// <summary>Replace the eligible-adapter list returned by subsequent <see cref="Enumerate"/> calls.</summary>
+    public void SetAdapters(params NetworkAdapter[] adapters) => _adapters = adapters;
 
     public static NetworkAdapter Adapter(string name, string ipv4) =>
         new(name, $"{name} (test)", IPAddress.Parse(ipv4));

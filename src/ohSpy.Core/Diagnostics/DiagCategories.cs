@@ -115,6 +115,18 @@ public static class DiagCategories
     /// <summary>Mandatory context: (none beyond message).</summary>
     public const string AdapterSwitchTimeout = "Adapter.Switch.Timeout";
 
+    /// <summary>
+    /// FR-057 / Amendment A34 (Story 2.12): a host network change (the bound adapter's IPv4 changed, or
+    /// the adapter was removed/disabled — e.g. moving the PC between networks) triggered an automatic
+    /// rebind to the best eligible adapter, or a teardown to the zero-adapter state when none is eligible.
+    /// Information severity. Distinct from <see cref="AdapterSwitch"/> (a manual <c>View → Network adapter</c>
+    /// pick), <see cref="Rescan"/>, and <see cref="SsdpExpired"/> so the operator sees in the FR-041 viewer
+    /// that the rebind was network-triggered. Mandatory context: ErrorText carries the
+    /// <c>old → new</c> adapter IPv4 (e.g. <c>"10.0.0.5 → 192.168.1.20"</c> or
+    /// <c>"10.0.0.5 → (no eligible adapter)"</c>).
+    /// </summary>
+    public const string AdapterNetworkChanged = "Adapter.NetworkChanged";
+
     // ─── Rescan (Story 5.3) ────────────────────────────────────────
     /// <summary>
     /// The Story 5.3 <c>View → Rescan</c> action (FR-021..FR-024): re-issue the M-SEARCH on the current

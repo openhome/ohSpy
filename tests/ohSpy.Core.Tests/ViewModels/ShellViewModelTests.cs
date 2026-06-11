@@ -57,7 +57,9 @@ public sealed class ShellViewModelTests
         TaggedFactory<RecordingSsdpTransport> Transports,
         TaggedFactory<RecordingCallbackHost> Hosts,
         IUiDispatcher Ui,
-        FakeDiagnosticsLauncher DiagnosticsLauncher);
+        FakeDiagnosticsLauncher DiagnosticsLauncher,
+        StubAdapterEnumerator Adapters,
+        FakeNetworkChangeNotifier NetworkChange);
 
     private static Harness NewHarness(IUiDispatcher? ui = null, params NetworkAdapter[] adapters)
     {
@@ -81,6 +83,7 @@ public sealed class ShellViewModelTests
             new FakeInvocationPopupLauncher(), new FakeSubscriptionPopupLauncher());
 
         var diagnosticsLauncher = new FakeDiagnosticsLauncher();
+        var networkChange = new FakeNetworkChangeNotifier();
         var vm = new ShellViewModel(
             enumerator,
             transports.Next,
@@ -91,9 +94,10 @@ public sealed class ShellViewModelTests
             ui,
             diag,
             diagnosticsLauncher,
+            networkChange,
             nodeServices);
 
-        return new Harness(vm, rec, registry, subClient, diag, transports, hosts, ui, diagnosticsLauncher);
+        return new Harness(vm, rec, registry, subClient, diag, transports, hosts, ui, diagnosticsLauncher, enumerator, networkChange);
     }
 
     private static async Task StartAsync(Harness h)
@@ -123,10 +127,11 @@ public sealed class ShellViewModelTests
             new FakeUriLauncher(), new FakePropertiesLauncher(),
             new FakeInvocationPopupLauncher(), new FakeSubscriptionPopupLauncher());
         var diagnosticsLauncher = new FakeDiagnosticsLauncher();
+        var networkChange = new FakeNetworkChangeNotifier();
         var vm = new ShellViewModel(
             enumerator, transports.Next, () => hosts.Next(), discovery, subClient,
-            registry, ui, diag, diagnosticsLauncher, nodeServices);
-        return new Harness(vm, rec, registry, subClient, diag, transports, hosts, ui, diagnosticsLauncher);
+            registry, ui, diag, diagnosticsLauncher, networkChange, nodeServices);
+        return new Harness(vm, rec, registry, subClient, diag, transports, hosts, ui, diagnosticsLauncher, enumerator, networkChange);
     }
 
     // ── Story 5.1 — OpenDiagnosticsCommand crosses the Core/App launcher seam ────
@@ -653,5 +658,247 @@ public sealed class ShellViewModelTests
         h.Vm.IsSwitching.Should().BeTrue("the IsSwitching=false clear must be marshalled via _ui.Post");
         ui.Drain();
         h.Vm.IsSwitching.Should().BeFalse();
+    }
+
+    // ════════════════════ Story 2.12 — Network-change auto-rebind (FR-057) ════════════════════════════
+    //
+    // Drives the FakeNetworkChangeNotifier through the ShellViewModel switch rig. The debounce is driven
+    // via SetNetworkChangeDebounceForTest (instant, controllable — no real 2 s sleep); the off-thread
+    // event → debounce → marshal → evaluate chain is awaited deterministically via
+    // WaitForNetworkChangeEvaluationForTest. The Action H test uses DeferredUiDispatcher (NOT Inline).
+
+    // Drive the debounce instantly (the burst-coalescing reset is the CTS, not the delay length).
+    private static void InstantDebounce(Harness h) =>
+        h.Vm.SetNetworkChangeDebounceForTest((_, _) => Task.CompletedTask, TimeSpan.Zero);
+
+    // Raise the network-change event and await the full debounce → marshal → evaluate chain.
+    private static async Task RaiseAndSettleAsync(Harness h)
+    {
+        h.NetworkChange.Raise();
+        await h.Vm.WaitForNetworkChangeEvaluationForTestAsync();
+    }
+
+    // ── AC #1/#2 — bound adapter gone → re-enumerate + rebind to the best eligible ──
+    [Fact]
+    [Trait("ac", "AC-2.12.2")]
+    [Trait("fr", "FR-057")]
+    public async Task NetworkChange_BoundAdapterGone_RebindsToBestEligible_FR057()
+    {
+        // Bound on A; only A and B are eligible at start.
+        var h = NewHarness(null, AdapterA, AdapterB);
+        await StartAsync(h);
+        h.Vm.CurrentAdapterIPv4.Should().Be(AdapterA.IPv4);
+        InstantDebounce(h);
+
+        // The network moves: A disappears, B is now the only eligible adapter.
+        h.Adapters.SetAdapters(AdapterB);
+
+        await RaiseAndSettleAsync(h);
+
+        h.Vm.CurrentAdapterIPv4.Should().Be(AdapterB.IPv4,
+            "the bound adapter A is gone → auto-rebind to the first eligible (B), no operator action");
+        h.Transports.Created.Should().HaveCount(2, "ONE rebind happened (#0 startup on A, #1 on B)");
+        h.Transports.Created[1].StartedWith.Should().Be(AdapterB.IPv4);
+        h.Diag.Entries.Should().Contain(e =>
+            e.Severity == "Information" && e.Category == DiagCategories.AdapterNetworkChanged &&
+            e.Context.ErrorText!.Contains("192.168.1.50") && e.Context.ErrorText!.Contains("10.0.0.7"),
+            "the network-change diagnostic carries old → new IPv4");
+    }
+
+    // ── AC #3 — bound adapter still present + unchanged → no-op ──
+    [Fact]
+    [Trait("ac", "AC-2.12.3")]
+    [Trait("fr", "FR-057")]
+    public async Task NetworkChange_BoundAdapterUnchanged_IsNoOp_FR057()
+    {
+        var h = NewHarness(null, AdapterA, AdapterB);
+        await StartAsync(h);
+        h.Vm.CurrentAdapterIPv4.Should().Be(AdapterA.IPv4);
+        InstantDebounce(h);
+
+        // A network event fires but A is still eligible (a DIFFERENT NIC changed / transient blip resolved).
+        await RaiseAndSettleAsync(h);
+
+        h.Vm.CurrentAdapterIPv4.Should().Be(AdapterA.IPv4, "unchanged bound adapter → no rebind");
+        h.Transports.Created.Should().HaveCount(1, "no new scope/transport — pure no-op");
+        h.Diag.Entries.Should().NotContain(e => e.Category == DiagCategories.AdapterNetworkChanged,
+            "the no-op path emits NO Adapter.NetworkChanged diagnostic");
+    }
+
+    // ── AC #4 — a burst of events coalesces into ONE evaluation (trailing-edge) ──
+    [Fact]
+    [Trait("ac", "AC-2.12.4")]
+    [Trait("fr", "FR-057")]
+    public async Task NetworkChange_BurstOfEvents_CoalescesToOneEvaluation_FR057()
+    {
+        var h = NewHarness(null, AdapterA, AdapterB);
+        await StartAsync(h);
+
+        // The debounce delay PENDS on each window's own token (Task.Delay(Infinite, ct)): an earlier
+        // window is aborted (OCE) the instant a newer raise cancels its CTS (the trailing-edge reset),
+        // EXCEPT once the test flips `settled` true — then the (final) window completes immediately and
+        // its evaluation runs. This models the real 2 s window: a mid-window raise resets the timer, so
+        // only the LAST window evaluates.
+        var settled = false;
+        h.Vm.SetNetworkChangeDebounceForTest(async (_, ct) =>
+        {
+            if (settled)
+            {
+                return; // the settled (final) window completes its wait → evaluation runs
+            }
+            await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false); // pends; a newer raise's CTS cancels it
+        }, TimeSpan.Zero);
+
+        h.Adapters.SetAdapters(AdapterB);
+
+        // Burst: the first three raises each park in the infinite delay, then are cancelled by the next
+        // raise (trailing-edge reset → their DebouncedEvaluateAsync observes OCE and bails).
+        h.NetworkChange.Raise();
+        h.NetworkChange.Raise();
+        h.NetworkChange.Raise();
+
+        // The network settles → the final raise's window completes immediately → ONE evaluation.
+        settled = true;
+        await RaiseAndSettleAsync(h);
+
+        h.Transports.Created.Should().HaveCount(2, "the burst produced exactly ONE rebind");
+        h.Diag.Entries.Count(e => e.Category == DiagCategories.AdapterNetworkChanged).Should().Be(1,
+            "exactly ONE network-change evaluation ran for the whole burst (trailing-edge debounce)");
+    }
+
+    // ── AC #5 — no eligible adapter → tear down to the zero-adapter state ──
+    [Fact]
+    [Trait("ac", "AC-2.12.5")]
+    [Trait("fr", "FR-057")]
+    public async Task NetworkChange_NoEligibleAdapter_TearsDownToZeroAdapter_FR057()
+    {
+        var h = NewHarness(null, AdapterA, AdapterB);
+        await StartAsync(h);
+        h.Vm.CurrentAdapterIPv4.Should().Be(AdapterA.IPv4);
+
+        // Seed a device so we can prove the stale registry is cleared on the teardown.
+        var udn = $"uuid:{Guid.NewGuid()}";
+        h.Registry.OnAlive(udn, new Uri("http://192.168.1.60:80/d.xml"), DateTime.UtcNow, "S", null, null, null, CancellationToken.None);
+        h.Registry.Count.Should().Be(1);
+        InstantDebounce(h);
+
+        // The PC loses all networks (cable pulled / Wi-Fi off).
+        h.Adapters.SetAdapters();
+
+        await RaiseAndSettleAsync(h);
+
+        h.Vm.CurrentAdapterIPv4.Should().BeNull("zero eligible adapters → torn down to the zero-adapter state (NFR-R5)");
+        h.Registry.Count.Should().Be(0, "the stale network's devices were cleared by the FR-050 sequence");
+        h.Diag.Entries.Should().Contain(e =>
+            e.Severity == "Information" && e.Category == DiagCategories.AdapterNetworkChanged &&
+            e.Context.ErrorText!.Contains("(no eligible adapter)"),
+            "the diagnostic records the teardown target");
+    }
+
+    // ── AC #5 follow-on — a later event yielding an eligible adapter rebinds ──
+    [Fact]
+    [Trait("ac", "AC-2.12.5")]
+    [Trait("fr", "FR-057")]
+    public async Task NetworkChange_ZeroAdapterThenAdapterReturns_Rebinds_FR057()
+    {
+        var h = NewHarness(null, AdapterA, AdapterB);
+        await StartAsync(h);
+        InstantDebounce(h);
+
+        // Lose everything → zero-adapter.
+        h.Adapters.SetAdapters();
+        await RaiseAndSettleAsync(h);
+        h.Vm.CurrentAdapterIPv4.Should().BeNull();
+
+        // A network returns (B) → rebind via the next event.
+        h.Adapters.SetAdapters(AdapterB);
+        await RaiseAndSettleAsync(h);
+
+        h.Vm.CurrentAdapterIPv4.Should().Be(AdapterB.IPv4, "a later eligible adapter rebinds (AC #2 path)");
+    }
+
+    // ── AC #6 — MANDATORY Action H marshalling guard (DeferredUiDispatcher, off-thread raise) ──
+    [Fact]
+    [Trait("ac", "AC-2.12.6")]
+    [Trait("fr", "FR-057")]
+    public async Task NetworkChange_OffThreadEvent_RebindIsMarshalled_FR057()
+    {
+        // DeferredUiDispatcher QUEUES Post(...): an un-marshalled rebind would apply without a Drain.
+        var ui = new DeferredUiDispatcher();
+        var h = NewHarness(ui, AdapterA, AdapterB);
+        await StartAsync(h);
+        InstantDebounce(h);
+
+        h.Adapters.SetAdapters(AdapterB); // A gone → would rebind to B
+
+        // Raise OFF-THREAD (the production event fires on a thread-pool / OS-callback thread).
+        await h.NetworkChange.RaiseOffThreadAsync();
+        await h.Vm.WaitForNetworkChangeEvaluationForTestAsync(); // debounce ran + Post queued, but NOT drained
+
+        // Before draining: the evaluation/rebind was Posted, not applied.
+        h.Vm.CurrentAdapterIPv4.Should().Be(AdapterA.IPv4,
+            "the evaluation/rebind must be marshalled via _ui.Post — not applied until the UI thread drains");
+        h.Transports.Created.Should().HaveCount(1, "no rebind before the drain");
+
+        ui.Drain();
+        // The evaluation now runs; the rebind itself is async, so await its task.
+        await h.Vm.WaitForNetworkChangeEvaluationForTestAsync();
+
+        h.Vm.CurrentAdapterIPv4.Should().Be(AdapterB.IPv4, "after the drain the marshalled rebind applied");
+    }
+
+    // ── AC #7 — re-entrancy: a manual switch in flight rejects the concurrent auto-rebind ──
+    [Fact]
+    [Trait("ac", "AC-2.12.7")]
+    [Trait("fr", "FR-057")]
+    public async Task NetworkChange_ManualSwitchInFlight_AutoRebindRejected_FR057()
+    {
+        // Park a manual SwitchAdapterAsync at the registry-clear gate so the _switching guard is held.
+        var ui = new GatedUiDispatcher();
+        var h = NewHarness(ui, AdapterA, AdapterB);
+        await StartAsync(h);
+        InstantDebounce(h);
+
+        var manual = h.Vm.SwitchAdapterAsync(AdapterB); // takes the shared guard
+        await ui.WaitForGateAsync();
+        h.Vm.IsSwitching.Should().BeTrue();
+
+        // A network change fires concurrently. Its evaluation runs (GatedUiDispatcher.Post is inline) and
+        // calls SwitchAdapterAsync, which is REJECTED by the shared _switching guard (no second guard, no
+        // orphan scope).
+        h.Adapters.SetAdapters(AdapterB);
+        await RaiseAndSettleAsync(h);
+
+        h.Diag.Entries.Should().Contain(e =>
+            e.Severity == "Information" && e.Category == DiagCategories.AdapterSwitch &&
+            e.Message.Contains("rejected"),
+            "the auto-rebind's SwitchAdapterAsync was rejected by the shared guard the manual switch holds");
+
+        ui.OpenGate();
+        await manual;
+        h.Vm.IsSwitching.Should().BeFalse();
+        h.Transports.Created.Should().HaveCount(2, "only the manual rebind happened — no orphan from the rejected auto-rebind");
+    }
+
+    // ── AC #11 — subscription lifecycle: dispose unsubscribes + disposes the notifier ──
+    [Fact]
+    [Trait("ac", "AC-2.12.11")]
+    [Trait("fr", "FR-057")]
+    public async Task NetworkChange_DisposeAsync_UnsubscribesAndDisposesNotifier_FR057()
+    {
+        var h = NewHarness(null, AdapterA, AdapterB);
+        await StartAsync(h);
+        InstantDebounce(h);
+
+        await h.Vm.DisposeAsync();
+
+        h.NetworkChange.DisposeCount.Should().Be(1, "DisposeAsync disposed the notifier exactly once (the BCL leak guard)");
+
+        // A post-dispose raise triggers NO evaluation (the handler was detached).
+        var transportsBefore = h.Transports.Created.Count;
+        h.Adapters.SetAdapters(AdapterB);
+        h.NetworkChange.Raise();
+        await h.Vm.WaitForNetworkChangeEvaluationForTestAsync();
+        h.Transports.Created.Should().HaveCount(transportsBefore, "a post-dispose network event is a no-op (handler detached)");
     }
 }

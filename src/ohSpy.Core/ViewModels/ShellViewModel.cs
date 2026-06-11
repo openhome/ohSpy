@@ -34,6 +34,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
     private readonly IUiDispatcher _ui;
     private readonly IDiagnosticEmitter _diag;
     private readonly IDiagnosticsLauncher _diagnosticsLauncher;
+    private readonly INetworkChangeNotifier _networkChangeNotifier; // FR-057 (Story 2.12)
 
     private AdapterScope? _adapterScope;
     private IEventCallbackHost? _callbackHost; // A23: owned here, rebuilt on switch (cannot re-start after dispose)
@@ -82,6 +83,61 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
     /// <summary>Test seam (InternalsVisibleTo): replace the rescan MX-wait delay (no real 5 s sleep).</summary>
     internal void SetRescanDelayForTest(Func<TimeSpan, CancellationToken, Task> delay) => _rescanDelay = delay;
 
+    // ── FR-057 (Story 2.12): host network-change auto-rebind ──────────────────────────────────────────
+    // The debounce window for the burst of NetworkAddressChanged events a transition produces (Q2 default
+    // 2 s, trailing-edge). NOT load-bearing for correctness (a too-short window just re-triggers on the
+    // next event); test-settable so tests drive it to (effectively) zero — no real multi-second sleeps.
+    private TimeSpan _debounceWindow = TimeSpan.FromSeconds(2);
+
+    // The debounce delay seam (the SubscriptionClient._delay / _rescanDelay precedent). Real Task.Delay
+    // in production; a test swaps it (SetNetworkChangeDebounceForTest) so the window is instant/controllable.
+    private Func<TimeSpan, CancellationToken, Task> _networkChangeDebounce = (d, ct) => Task.Delay(d, ct);
+
+    // Trailing-edge debounce CTS: each NetworkAddressChanged cancels the prior pending evaluation and
+    // starts a fresh window, so a burst coalesces into ONE evaluation (AC #4).
+    private CancellationTokenSource? _debounceCts;
+
+    // Test determinism (InternalsVisibleTo): the off-thread NetworkAddressChanged handler is
+    // fire-and-forget, so a test needs a handle to await the debounce → marshal → evaluate chain rather
+    // than racing it. The handler records its in-flight DebouncedEvaluateAsync task here; the evaluation
+    // (run inside the marshalled Post) records its own task. The seam below joins both.
+    private volatile Task _lastDebounceTask = Task.CompletedTask;
+    private volatile Task _lastEvaluateTask = Task.CompletedTask;
+
+    /// <summary>
+    /// Test seam (InternalsVisibleTo): await the most recently scheduled debounce → evaluate chain
+    /// (FR-057). Awaits the debounce task (which posts the evaluation) and then the evaluation task, so a
+    /// test can deterministically assert the post-rebind state without sleeping. With an InlineUiDispatcher
+    /// the Post runs synchronously inside the debounce task, capturing the evaluate task before this returns,
+    /// so a single call suffices. With a DeferredUiDispatcher the post is QUEUED, not run: the first call
+    /// here awaits only the (completed) debounce task while <see cref="_lastEvaluateTask"/> is still
+    /// Task.CompletedTask — drain the dispatcher, THEN call again to await the real evaluation. (See the
+    /// off-thread / Action-H marshalling tests for the two-call-around-Drain() pattern.)
+    /// </summary>
+    internal async Task WaitForNetworkChangeEvaluationForTestAsync()
+    {
+        // VSTHRD003: these are deliberately fire-and-forget tasks (the off-thread handler cannot await
+        // them in production); the test seam joins them to make assertions deterministic — no deadlock
+        // (no UI-thread affinity is captured; the test rig's dispatcher is inline/deferred/gated).
+#pragma warning disable VSTHRD003
+        await _lastDebounceTask.ConfigureAwait(false);
+        await _lastEvaluateTask.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
+    }
+
+    /// <summary>
+    /// Test seam (InternalsVisibleTo): replace the network-change debounce delay (no real 2 s sleep) and
+    /// optionally shrink the window. Mirrors <see cref="SetRescanDelayForTest"/>.
+    /// </summary>
+    internal void SetNetworkChangeDebounceForTest(Func<TimeSpan, CancellationToken, Task> delay, TimeSpan? window = null)
+    {
+        _networkChangeDebounce = delay;
+        if (window is { } w)
+        {
+            _debounceWindow = w;
+        }
+    }
+
     public ShellViewModel(
         INetworkAdapterEnumerator adapterEnum,
         Func<ISsdpTransport> transportFactory,
@@ -92,6 +148,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
         IUiDispatcher ui,
         IDiagnosticEmitter diag,
         IDiagnosticsLauncher diagnosticsLauncher,
+        INetworkChangeNotifier networkChangeNotifier,
         NodeServices nodeServices)
     {
         _adapterEnum  = adapterEnum;
@@ -103,6 +160,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
         _ui           = ui;
         _diag         = diag;
         _diagnosticsLauncher = diagnosticsLauncher;
+        _networkChangeNotifier = networkChangeNotifier;
         _deviceTree  = new DeviceTreeViewModel(registry, ui, nodeServices);
         _ssdpLog     = new SsdpLogViewModel(discovery, ui); // subscribes to AnnouncementReceived (app-lifetime)
     }
@@ -225,6 +283,13 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
         Interlocked.Exchange(ref _switching, 1);
         _appToken = appToken;
         _adapterScope = NewScope();
+
+        // FR-057 (Story 2.12): arm the host network-change listener now the scope exists. Subscribed HERE
+        // (not in the ctor) so a never-started VM in a test does not arm the BCL handler. DisposeAsync
+        // detaches + disposes it (the leak guard). The raw handler only schedules the debounce — it does
+        // NO enumerate/rebind work inline (AC #1), and the event fires off-thread (Action H).
+        _networkChangeNotifier.NetworkAddressChanged += OnNetworkAddressChanged;
+
         // _runTask is retained so DisposeAsync can await orderly startup completion before
         // tearing the scope down (avoids disposing mid-bind).
         _runTask = RunStartAsync(_adapterScope, preferred: null);
@@ -319,18 +384,44 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
     /// UI thread via <c>_ui.Post</c>.
     /// </para>
     /// </summary>
-    public async Task SwitchAdapterAsync(NetworkAdapter newAdapter)
+    public Task SwitchAdapterAsync(NetworkAdapter newAdapter)
     {
         ArgumentNullException.ThrowIfNull(newAdapter);
 
         // No-op if the chosen adapter is already active (AC-5.2.2). Read before taking the guard.
         if (newAdapter.IPv4.Equals(CurrentAdapterIPv4))
         {
-            return;
+            return Task.CompletedTask;
         }
 
+        return SwitchCoreAsync(newAdapter);
+    }
+
+    /// <summary>
+    /// FR-057 (Story 2.12): tear down to the ZERO-ADAPTER state, reusing the EXACT FR-050 sequence
+    /// (<see cref="SwitchCoreAsync"/> with a <c>null</c> target) rather than forking it. The new scope is
+    /// built with <c>preferred: null</c> → <c>AdapterScope.StartAsync</c> re-enumerates, finds zero
+    /// eligible adapters, and yields a scope whose <c>CurrentAdapterIPv4</c> is <c>null</c>;
+    /// <see cref="StartBoundServicesAsync"/> then starts nothing inbound (NFR-R5). The registry + SSDP log
+    /// are still cleared by the shared body, the <c>_switching</c> guard still serialises against a manual
+    /// switch, and the app remains running + interactive. A later network change that yields an eligible
+    /// adapter rebinds via <see cref="SwitchAdapterAsync"/>.
+    /// </summary>
+    internal Task SwitchToZeroAdapterAsync() => SwitchCoreAsync(target: null);
+
+    /// <summary>
+    /// The shared FR-050 atomic-rebind body. <paramref name="target"/> non-null = a manual switch
+    /// (Story 5.2) or a network-change rebind (FR-057) to that adapter; <paramref name="target"/> null =
+    /// the FR-057 zero-adapter teardown (build the new scope launch-default, which re-enumerates to an
+    /// empty list and binds nothing). Same re-entrancy guard, same registry/log clear, same diagnostics —
+    /// the zero-adapter case is just "rebind to nothing", not a separate teardown path.
+    /// </summary>
+    private async Task SwitchCoreAsync(NetworkAdapter? target)
+    {
         // Re-entrancy guard (AC-5.2.9): reject a second switch (or a switch fired during startup). No
-        // two scopes ever live at once; no orphaned scope.
+        // two scopes ever live at once; no orphaned scope. Shared by the manual switch AND the FR-057
+        // auto-rebind (AC #7) — a manual pick in flight rejects the auto call, and vice-versa (NO second
+        // guard).
         if (Interlocked.Exchange(ref _switching, 1) == 1)
         {
             _diag.Information(DiagCategories.AdapterSwitch,
@@ -339,7 +430,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
         }
 
         var oldIp = CurrentAdapterIPv4?.ToString() ?? "(none)";
-        var newIp = newAdapter.IPv4.ToString();
+        var newIp = target?.IPv4.ToString() ?? "(none)";
 
         // Transient state (NFR-UI3). Pre-await → on the UI thread → safe direct set.
         IsSwitching = true;
@@ -388,13 +479,16 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
 
             // ── Steps 8/9/10: build a fresh scope on the chosen adapter, start the bound services
             //    (reusing the same start block as startup), M-SEARCH fires inside scope.StartAsync.
+            //    target null (FR-057 zero-adapter teardown) → StartAsync(null) re-enumerates → empty →
+            //    CurrentAdapterIPv4 stays null → nothing inbound started (NFR-R5).
             newScope = NewScope();
             _adapterScope = newScope;
-            await newScope.StartAsync(newAdapter).ConfigureAwait(false);
+            await newScope.StartAsync(target).ConfigureAwait(false);
             await StartBoundServicesAsync(newScope).ConfigureAwait(false);
 
+            var nowOn = newScope.CurrentAdapterIPv4?.ToString() ?? "(no adapter)";
             _diag.Information(DiagCategories.AdapterSwitch, "adapter switch completed",
-                new DiagnosticContext { ErrorText = $"now on {newIp}" });
+                new DiagnosticContext { ErrorText = $"now on {nowOn}" });
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -445,8 +539,122 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    // ── FR-057 (Story 2.12): host network-change auto-rebind ──────────────────────────────────────────
+
+    /// <summary>
+    /// The raw <see cref="INetworkChangeNotifier.NetworkAddressChanged"/> handler. Fires on a NON-UI
+    /// thread (Action H). Does the MINIMUM (AC #1): trailing-edge debounce — cancel any in-flight
+    /// debounce window and start a fresh one, coalescing the OS notification burst into ONE evaluation
+    /// (AC #4). NO enumerate/rebind work happens here.
+    /// </summary>
+    private void OnNetworkAddressChanged(object? sender, EventArgs e)
+    {
+        // Atomically swap in a fresh CTS; cancel + dispose the prior pending window (the burst-coalescing
+        // reset). Interlocked.Exchange keeps this safe even if the OS fires the event concurrently.
+        var fresh = new CancellationTokenSource();
+        var prior = Interlocked.Exchange(ref _debounceCts, fresh);
+        // Synchronous Cancel: this is a void off-thread event handler (cannot await), and the cancel only
+        // trips a CTS the debounce task observes — no blocking teardown runs under it.
+#pragma warning disable VSTHRD103
+        prior?.Cancel();
+#pragma warning restore VSTHRD103
+        prior?.Dispose();
+        // A26 fire-and-forget; the body swallows OCE + faults. The task handle is retained for the
+        // test seam only (production never awaits it — the handler must return promptly off-thread).
+        _lastDebounceTask = DebouncedEvaluateAsync(fresh.Token);
+    }
+
+    /// <summary>
+    /// Waits the debounce window (test-settable seam), then marshals the evaluation onto the UI thread
+    /// (Action H — both the event and this continuation are off-thread). A newer event cancels this token
+    /// → the await throws OCE → coalesced (AC #4). Any other fault is surfaced as a Warning, never leaked
+    /// (A26 fire-and-forget discipline).
+    /// </summary>
+    private async Task DebouncedEvaluateAsync(CancellationToken token)
+    {
+        try
+        {
+            await _networkChangeDebounce(_debounceWindow, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested(); // a newer event may have landed during the delay
+            _ui.Post(() => { _lastEvaluateTask = EvaluateNetworkChangeAsync(); });
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer NetworkAddressChanged — coalesced (AC #4). Nothing to do.
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _diag.Warning(DiagCategories.AdapterNetworkChanged, "network-change evaluation failed",
+                new DiagnosticContext { ErrorText = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Runs on the UI thread (post-marshal). Re-enumerates eligible adapters (FR-048) and decides:
+    /// <list type="bullet">
+    ///   <item>bound adapter still eligible (same IPv4) → NO-OP (AC #3): no rebind, no diagnostic, no
+    ///         <see cref="SwitchAdapterAsync"/> call (so no spurious diagnostic / guard acquisition).</item>
+    ///   <item>bound adapter gone / IPv4 changed, an eligible adapter remains → rebind to the first
+    ///         eligible (the FR-048 launch-default policy) via <see cref="SwitchAdapterAsync"/> (AC #2).</item>
+    ///   <item>zero eligible adapters → tear down to the zero-adapter state via
+    ///         <see cref="SwitchToZeroAdapterAsync"/> (AC #5).</item>
+    /// </list>
+    /// Reading <see cref="CurrentAdapterIPv4"/> AFTER the marshal is deliberate (AC #7): if a manual
+    /// switch landed during the debounce, the evaluation sees the new current adapter and correctly
+    /// no-ops or rebinds against the new state. Re-entrancy is handled by the shared <c>_switching</c>
+    /// guard inside <see cref="SwitchAdapterAsync"/> — no second guard.
+    /// </summary>
+    private async Task EvaluateNetworkChangeAsync()
+    {
+        var adapters = _adapterEnum.Enumerate();
+        var current = CurrentAdapterIPv4;
+
+        // AC #3 — bound adapter still present + unchanged → no-op. (current null + adapters empty also
+        // short-circuits here: there is nothing to rebind to and we are already torn down.)
+        var stillBound = current is not null && adapters.Any(a => a.IPv4.Equals(current));
+        if (stillBound || (current is null && adapters.Count == 0))
+        {
+            return;
+        }
+
+        var best = adapters.Count > 0 ? adapters[0] : null; // FR-048 launch-default = first eligible
+        var oldIp = current?.ToString() ?? "(none)";
+        var newIp = best?.IPv4.ToString() ?? "(no eligible adapter)";
+
+        // AC #8 — the network-triggered rebind is distinct from a manual Adapter.Switch / Rescan / Expired.
+        _diag.Information(DiagCategories.AdapterNetworkChanged, "network change → auto-rebind",
+            new DiagnosticContext { ErrorText = $"{oldIp} → {newIp}" });
+
+        if (best is not null)
+        {
+            await SwitchAdapterAsync(best).ConfigureAwait(false);   // AC #2
+        }
+        else
+        {
+            await SwitchToZeroAdapterAsync().ConfigureAwait(false); // AC #5
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
+        // FR-057 (Story 2.12) — detach + cancel BEFORE tearing the scope down so a late network-change
+        // event cannot kick a rebind mid-dispose. Unsubscribe the BCL forwarder, cancel any pending
+        // debounce window, then dispose the notifier (detaches the BCL static-event handler — the leak
+        // guard; a leaked subscriber on NetworkChange roots itself for process life).
+        // INVARIANT: the unsubscribe and the CTS exchange below are CONSECUTIVE synchronous statements
+        // (no await between them) so the window for a DebouncedEvaluateAsync that already slipped past its
+        // token check is as small as possible. An evaluation that still slips through finds _adapterScope
+        // null (guarded in SwitchCoreAsync) and no-ops. Do NOT insert an await between these two lines —
+        // it would widen that window into a real mid-dispose rebind race.
+        _networkChangeNotifier.NetworkAddressChanged -= OnNetworkAddressChanged;
+        var pendingDebounce = Interlocked.Exchange(ref _debounceCts, null);
+        if (pendingDebounce is not null)
+        {
+            await pendingDebounce.CancelAsync().ConfigureAwait(false);
+            pendingDebounce.Dispose();
+        }
+        _networkChangeNotifier.Dispose();
+
         // Await orderly startup completion first so we never dispose the scope mid-bind.
         // RunStartAsync has its own broad catch, so this await never throws.
         if (_runTask is not null)

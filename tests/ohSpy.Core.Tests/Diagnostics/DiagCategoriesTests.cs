@@ -57,7 +57,7 @@ public class DiagCategoriesTests
             "GenaCallbackHeadersTo", "GenaCallbackBodyTo", "GenaCallbackFlood",
             "GenaNotifyReceived",
             // Adapter
-            "AdapterSwitch", "AdapterSwitchTimeout",
+            "AdapterSwitch", "AdapterSwitchTimeout", "AdapterNetworkChanged",
             // Rescan (Story 5.3)
             "Rescan",
             // Diagnostics infrastructure

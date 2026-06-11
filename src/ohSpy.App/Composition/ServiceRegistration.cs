@@ -196,6 +196,15 @@ internal static class ServiceRegistration
         services.AddSingleton<DiagnosticsLauncher>();
         services.AddSingleton<IDiagnosticsLauncher>(sp => sp.GetRequiredService<DiagnosticsLauncher>());
 
+        // Story 2.12 (FR-057) — host network-change notifier. The BCL-backed forwarder over
+        // NetworkChange.NetworkAddressChanged (a test-fakeable Core seam; the static event is not directly
+        // raisable in a test and roots its subscribers for process life). Singleton; registered BEFORE
+        // ShellViewModel so it auto-resolves into the ctor (the IDiagnosticsLauncher precedent above).
+        // ShellViewModel.StartAsync arms the subscription; DisposeAsync detaches + disposes it (no new App
+        // start code — StartAsync is already called from App.OnLaunched). The seam + impl are Core; this
+        // one registration is the only App touch (CoreAppBoundaryTests stays green).
+        services.AddSingleton<INetworkChangeNotifier, NetworkChangeNotifier>();
+
         // Story 2.5 — Main window shell ViewModel. Singleton: one window, one ShellViewModel.
         // ShellViewModel owns the AdapterScope lifetime (Amendment A26 migration from App.xaml.cs).
         // DeviceTreeViewModel is constructed by ShellViewModel, not registered separately.
