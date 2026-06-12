@@ -102,7 +102,9 @@
       <InnoSetupCompiler Condition="'$(InnoSetupCompiler)' == '' And Exists('$(_IsccX64)')">$(_IsccX64)</InnoSetupCompiler>
       <InnoSetupCompiler Condition="'$(InnoSetupCompiler)' == ''">$(_IsccX86)</InnoSetupCompiler>
       <InstallerOutputDir>$(MSBuildThisFileDirectory)..\..\installer\out</InstallerOutputDir>
-      <InstallerVersion>$([System.DateTime]::UtcNow.ToString("yyyy.MM.dd.HHmm"))</InstallerVersion>
+      <!-- The release installer takes the product $(Version) (1.0.0, from Directory.Build.props) →
+           ohSpy-setup-1.0.0-x64.exe. Override explicitly with -p:InstallerVersion=... for an ad-hoc build. -->
+      <InstallerVersion Condition="'$(InstallerVersion)' == ''">$(Version)</InstallerVersion>
       <!-- Deterministic publish path: matches the default Publish target output regardless of whether
            a publish profile was used. Avoids the case where the pubxml's PublishDir and MSBuild's
            default disagree, resulting in an empty installer. -->

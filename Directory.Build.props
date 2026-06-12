@@ -1,4 +1,12 @@
 <Project>
+  <!-- Product version (v1.0.0). Threads into AssemblyVersion/FileVersion/InformationalVersion for every
+       project, and the installer derives its version from $(Version) (see ohSpy.App.csproj BuildInstaller). -->
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <Product>ohSpy</Product>
+    <Company>Linn</Company>
+  </PropertyGroup>
+
   <PropertyGroup>
     <LangVersion>13</LangVersion>
     <Nullable>enable</Nullable>
